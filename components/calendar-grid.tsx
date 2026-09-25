@@ -120,6 +120,7 @@ export function CalendarGrid({
             <button
               key={`${day.date}-${index}`}
               onClick={() => onSelectDay(day)}
+              suppressHydrationWarning
               className={cn(
                 'group relative flex flex-col justify-between text-left transition-all duration-150 p-2 sm:p-2.5 min-h-[78px] sm:min-h-[96px] md:min-h-[104px] focus:outline-none cursor-pointer',
                 day.isCurrentMonth

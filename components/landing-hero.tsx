@@ -22,6 +22,18 @@ export function LandingHero({
       <div className="absolute top-1/3 left-1/4 -translate-x-1/2 w-[300px] h-[250px] bg-purple-500/5 blur-[100px] rounded-full pointer-events-none" />
 
       <div className="relative mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center">
+        {/* App Logo */}
+        <div className="mb-6 flex justify-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#161b22] border border-[#30363d] p-2 shadow-2xl shadow-emerald-950/60 ring-1 ring-emerald-500/20">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/strakvu.png"
+              alt="Strakvu"
+              className="h-12 w-12 object-contain"
+            />
+          </div>
+        </div>
+
         {/* Release badge */}
         <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3 py-1 text-xs font-mono text-emerald-300 shadow-sm backdrop-blur-sm mb-6">
           <span className="flex h-2 w-2 rounded-full bg-[#39d353] animate-pulse" />

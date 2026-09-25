@@ -54,8 +54,17 @@ export function Navbar({
             onClick={() => setActiveView('dashboard')}
             className="flex items-center gap-2.5 text-left group transition-transform active:scale-98"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#238636] to-[#2ea043] shadow-md shadow-emerald-950/40 text-white">
-              <GitCommit className="h-5 w-5 stroke-[2.4]" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden shadow-md">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/strakvu.png"
+                alt="Strakvu Logo"
+                className="h-7 w-7 object-contain"
+                onError={(e) => {
+                  // Fallback to git icon if image fails
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">

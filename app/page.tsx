@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useSyncExternalStore, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useSyncExternalStore, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Navbar } from '@/components/navbar';
 import { LandingHero } from '@/components/landing-hero';
@@ -8,11 +8,10 @@ import { CalendarGrid } from '@/components/calendar-grid';
 import { DayTimeline } from '@/components/day-timeline';
 import { StatsOverview } from '@/components/stats-overview';
 import { ConnectModal } from '@/components/connect-modal';
-import { MakePushModal } from '@/components/make-push-modal';
 import { INITIAL_DEVELOPER, getCleanMonthActivities } from '@/lib/mock-data';
 import { DayActivity, DeveloperProfile, AIChatSession, ActivityEvent } from '@/types/activity';
 import { MONTH_NAMES } from '@/lib/utils';
-import { Filter, Github, GitCommit, RefreshCw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Filter, Github, GitCommit, RefreshCw, Loader2, CheckCircle2, AlertCircle, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const emptySubscribe = () => () => {};
@@ -53,13 +52,8 @@ export default function StrakvuPage() {
   const session = sessionHook?.data;
   const sessionStatus = sessionHook?.status || 'unauthenticated';
 
-  const [activeView, setActiveView] = useState<'dashboard' | 'landing'>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('view') === 'landing') return 'landing';
-    }
-    return 'dashboard';
-  });
+  const [mounted, setMounted] = useState(false);
+  const [activeView, setActiveView] = useState<'dashboard' | 'landing'>('dashboard');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
   const storedProfileRaw = useSyncExternalStore(
@@ -87,15 +81,25 @@ export default function StrakvuPage() {
 
   // GitHub live API state
   const [githubEventsByDate, setGithubEventsByDate] = useState<Record<string, ActivityEvent[]>>({});
+  const [storiesByDate, setStoriesByDate] = useState<Record<string, string>>({});
+  const [fetchedRepos, setFetchedRepos] = useState<string[]>([]);
   const [isLoadingGitHub, setIsLoadingGitHub] = useState(false);
   const [githubFetchError, setGithubFetchError] = useState<string | null>(null);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
 
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [isMakePushModalOpen, setIsMakePushModalOpen] = useState(false);
   const [selectedRepoFilter, setSelectedRepoFilter] = useState<string>('all');
   const [layoutMode, setLayoutMode] = useState<'split' | 'stacked'>('split');
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
+
+  // Mark component mounted on client
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('view') === 'landing') setActiveView('landing');
+    }
+  }, []);
 
   // Base profile derived from stored or initial
   const baseProfile: DeveloperProfile = useMemo(() => {
@@ -137,8 +141,12 @@ export default function StrakvuPage() {
     return {};
   }, [aiChatsOverride, storedAIChatsRaw]);
 
-  // Fetch 90-day real GitHub activity from our Octokit API route
-  const fetchGitHubActivity = useCallback(async (targetUsername?: string, token?: string) => {
+  // Fetch real GitHub activity (with caching and error resilience)
+  const isFetchingRef = useRef(false);
+
+  const fetchGitHubActivity = useCallback(async (targetUsername?: string, token?: string, forceRefresh = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setIsLoadingGitHub(true);
     setGithubFetchError(null);
 
@@ -146,6 +154,7 @@ export default function StrakvuPage() {
       const params = new URLSearchParams();
       if (targetUsername) params.set('username', targetUsername);
       if (token) params.set('token', token);
+      if (forceRefresh) params.set('refresh', 'true');
 
       const res = await fetch(`/api/github/activity?${params.toString()}`);
       const data = await res.json();
@@ -158,18 +167,26 @@ export default function StrakvuPage() {
         setGithubEventsByDate(data.eventsByDate);
       }
 
+      if (data.storiesByDate) {
+        setStoriesByDate(data.storiesByDate);
+      }
+
+      if (Array.isArray(data.repositories)) {
+        setFetchedRepos(data.repositories);
+      }
+
       if (data.profile) {
-        const updatedProfile: DeveloperProfile = {
-          ...baseProfile,
-          ...data.profile,
-          isConnected: true,
-        };
-        setProfileOverride(updatedProfile);
-        try {
-          localStorage.setItem('strakvu_profile', JSON.stringify(updatedProfile));
-        } catch {
-          // fallback
-        }
+        setProfileOverride((prev) => {
+          const updated: DeveloperProfile = {
+            ...(prev || INITIAL_DEVELOPER),
+            ...data.profile,
+            isConnected: true,
+          };
+          try {
+            localStorage.setItem('strakvu_profile', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
       }
 
       const now = new Date();
@@ -178,45 +195,34 @@ export default function StrakvuPage() {
       setGithubFetchError(err?.message || 'Could not load GitHub activity.');
     } finally {
       setIsLoadingGitHub(false);
+      isFetchingRef.current = false;
     }
-  }, [baseProfile]);
+  }, []);
 
-  // Automatically fetch on mount or when NextAuth session changes
+  // Fetch once on mount or when session state transitions
+  const hasInitialFetched = useRef(false);
   useEffect(() => {
-    let active = true;
+    if (!mounted) return;
 
-    const syncActivity = async () => {
-      // Defer to microtask to ensure component mount is complete
-      await Promise.resolve();
-      if (!active) return;
-
-      if (sessionStatus === 'authenticated' && session?.user) {
-        // @ts-expect-error accessToken on session
-        const token = session.accessToken as string | undefined;
-        // @ts-expect-error username on session user
-        const username = (session.user.username as string) || session.user.name || undefined;
-        await fetchGitHubActivity(username, token);
-      } else if (sessionStatus === 'unauthenticated') {
-        const storedToken = typeof window !== 'undefined' ? localStorage.getItem('strakvu_github_token') || undefined : undefined;
-        const stored = baseProfile.username || 'sanjayanand';
-        await fetchGitHubActivity(stored, storedToken);
-      }
-    };
-
-    syncActivity();
-
-    return () => {
-      active = false;
-    };
-  }, [sessionStatus, session, baseProfile.username, fetchGitHubActivity]);
+    if (sessionStatus === 'authenticated' && session?.user) {
+      // @ts-expect-error accessToken on session
+      const token = session.accessToken as string | undefined;
+      // @ts-expect-error username on session user
+      const username = (session.user.username as string) || session.user.name || undefined;
+      fetchGitHubActivity(username, token);
+    } else if (sessionStatus === 'unauthenticated' && !hasInitialFetched.current) {
+      hasInitialFetched.current = true;
+      const storedToken = typeof window !== 'undefined' ? localStorage.getItem('strakvu_github_token') || undefined : undefined;
+      const targetUser = baseProfile.username || 'sanjayanand';
+      fetchGitHubActivity(targetUser, storedToken);
+    }
+  }, [mounted, sessionStatus, session, fetchGitHubActivity, baseProfile.username]);
 
   const handleUpdateProfile = (newProfile: DeveloperProfile) => {
     setProfileOverride(newProfile);
     try {
       localStorage.setItem('strakvu_profile', JSON.stringify(newProfile));
-    } catch {
-      // Fallback
-    }
+    } catch {}
   };
 
   const handleDisconnect = () => {
@@ -226,12 +232,13 @@ export default function StrakvuPage() {
     };
     handleUpdateProfile(disconnected);
     setGithubEventsByDate({});
+    setStoriesByDate({});
+    setFetchedRepos([]);
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('strakvu_github_token');
-      } catch {
-        // Fallback
-      }
+        localStorage.removeItem('strakvu_profile');
+      } catch {}
     }
   };
 
@@ -240,11 +247,9 @@ export default function StrakvuPage() {
     if (typeof window !== 'undefined' && token) {
       try {
         localStorage.setItem('strakvu_github_token', token);
-      } catch {
-        // Fallback
-      }
+      } catch {}
     }
-    fetchGitHubActivity(userToFetch, token);
+    fetchGitHubActivity(userToFetch, token, true);
     setActiveView('dashboard');
   };
 
@@ -264,24 +269,6 @@ export default function StrakvuPage() {
     setCurrentDate(today);
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     setSelectedDayDate(todayStr);
-  };
-
-  // Record a new push (either custom or manual)
-  const handleRecordPush = (newEvent: ActivityEvent) => {
-    const date = selectedDayDate || `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
-    const nextPushes = {
-      ...customPushes,
-      [date]: [...(customPushes[date] || []), newEvent],
-    };
-
-    setCustomPushesOverride(nextPushes);
-    try {
-      localStorage.setItem('strakvu_custom_pushes', JSON.stringify(nextPushes));
-    } catch {
-      // Fallback
-    }
-
-    setSelectedDayDate(date);
   };
 
   // Add custom AI chat session for a day
@@ -307,12 +294,10 @@ export default function StrakvuPage() {
     setAiChatsOverride(nextChats);
     try {
       localStorage.setItem('strakvu_aichats', JSON.stringify(nextChats));
-    } catch {
-      // Fallback
-    }
+    } catch {}
   };
 
-  // Merge Live GitHub Events with any custom pushes & AI chats
+  // Merge Live GitHub Events with any custom AI chats
   const rawMonthActivities = useMemo(() => {
     const baseDays = getCleanMonthActivities(currentDate.getFullYear(), currentDate.getMonth());
 
@@ -323,10 +308,9 @@ export default function StrakvuPage() {
 
       const dayAIChats = recordedAIChats[day.date] || [];
 
-      const totalCommits = allEvents.reduce(
-        (sum, e) => sum + (e.commits ? e.commits.length : 1),
-        0
-      );
+      const totalCommits = allEvents.reduce((sum, e) => {
+        return sum + (e.commits && e.commits.length > 0 ? e.commits.length : e.type === 'commit' || e.type === 'push' ? 1 : 0);
+      }, 0);
 
       const repos = Array.from(new Set(allEvents.map((e) => e.repo)));
 
@@ -338,11 +322,7 @@ export default function StrakvuPage() {
       else level = 4;
 
       const primaryFocusRepo = repos[0];
-      let humanSummary: string | undefined = undefined;
-
-      if (allEvents.length > 0) {
-        humanSummary = `Shipped ${totalCommits} ${totalCommits === 1 ? 'commit' : 'commits'} across ${repos.join(', ')}.`;
-      }
+      const humanSummary = storiesByDate[day.date] || (allEvents.length > 0 ? `Shipped ${totalCommits} ${totalCommits === 1 ? 'commit' : 'commits'} across ${repos.join(', ')}.` : undefined);
 
       return {
         ...day,
@@ -356,19 +336,16 @@ export default function StrakvuPage() {
         aiSessions: dayAIChats.length > 0 ? dayAIChats : undefined,
       };
     });
-  }, [currentDate, githubEventsByDate, customPushes, recordedAIChats]);
+  }, [currentDate, githubEventsByDate, customPushes, recordedAIChats, storiesByDate]);
 
-  // Collect all available repositories from real events
+  // Collect all available repositories
   const availableRepos = useMemo(() => {
-    const repoSet = new Set<string>();
+    const repoSet = new Set<string>(fetchedRepos);
     Object.values(githubEventsByDate).forEach((events) => {
       events.forEach((e) => repoSet.add(e.repo));
     });
-    Object.values(customPushes).forEach((events) => {
-      events.forEach((e) => repoSet.add(e.repo));
-    });
     return Array.from(repoSet);
-  }, [githubEventsByDate, customPushes]);
+  }, [fetchedRepos, githubEventsByDate]);
 
   // Apply repo filter
   const filteredMonthActivities = useMemo(() => {
@@ -429,7 +406,7 @@ export default function StrakvuPage() {
   }, [githubEventsByDate]);
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-[#e6edf3] flex flex-col font-sans selection:bg-[#238636] selection:text-white antialiased">
+    <div className="min-h-screen bg-[#0b0f17] text-[#e6edf3] flex flex-col font-sans selection:bg-[#238636] selection:text-white antialiased" suppressHydrationWarning>
       {/* Navbar */}
       <Navbar
         profile={baseProfile}
@@ -459,7 +436,7 @@ export default function StrakvuPage() {
                 )}
                 <div>
                   <p className="text-xs font-mono font-medium text-white flex items-center gap-2">
-                    <span>GitHub Events API: @{baseProfile.username}</span>
+                    <span>GitHub Activity: @{baseProfile.username || 'developer'}</span>
                     {lastSyncedTime && (
                       <span className="text-[10px] text-[#8b949e]">
                         (Synced {lastSyncedTime})
@@ -468,7 +445,7 @@ export default function StrakvuPage() {
                   </p>
                   <p className="text-[11px] text-[#8b949e]">
                     {totalRealEventsCount > 0
-                      ? `Pulled ${totalRealEventsCount} real events (pushes, repos, PRs) across the last 90 days.`
+                      ? `Loaded ${totalRealEventsCount} real commits and operations across ${availableRepos.length} repositories.`
                       : 'Syncing live GitHub repository activity down to the minute...'}
                   </p>
                 </div>
@@ -478,7 +455,7 @@ export default function StrakvuPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => fetchGitHubActivity(baseProfile.username)}
+                  onClick={() => fetchGitHubActivity(baseProfile.username, undefined, true)}
                   disabled={isLoadingGitHub}
                   className="h-8 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
                 >
@@ -492,7 +469,7 @@ export default function StrakvuPage() {
                   className="h-8 bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs"
                 >
                   <Github className="h-3.5 w-3.5 mr-1.5" />
-                  <span>Change Account</span>
+                  <span>Connect Account</span>
                 </Button>
               </div>
             </div>
@@ -510,7 +487,7 @@ export default function StrakvuPage() {
                   className="bg-amber-500 hover:bg-amber-400 text-black font-bold font-mono text-xs whitespace-nowrap self-start sm:self-auto h-8 px-3"
                 >
                   <Github className="h-3.5 w-3.5 mr-1.5" />
-                  <span>Connect Account / Token</span>
+                  <span>Connect GitHub OAuth</span>
                 </Button>
               </div>
             )}
@@ -522,13 +499,13 @@ export default function StrakvuPage() {
               selectedMonthName={monthName}
             />
 
-            {/* Repository Filter & View Controls Toolbar */}
+            {/* Repository Filter Toolbar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#161b22]/40 p-3 rounded-xl border border-[#21262d]">
               {/* Repo Selector */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                 <span className="flex items-center gap-1 text-xs font-mono text-[#8b949e] shrink-0">
                   <Filter className="h-3 w-3" />
-                  <span>Repo:</span>
+                  <span>Filter Repo:</span>
                 </span>
                 <button
                   onClick={() => setSelectedRepoFilter('all')}
@@ -544,7 +521,7 @@ export default function StrakvuPage() {
                   <button
                     key={repo}
                     onClick={() => setSelectedRepoFilter(repo)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-mono shrink-0 transition-colors ${
+                    className={`px-2.5 py-1 rounded-md text-xs font-mono shrink-0 transition-colors truncate max-w-[200px] ${
                       selectedRepoFilter === repo
                         ? 'bg-emerald-950/80 border border-emerald-700/70 text-emerald-300 font-medium'
                         : 'border border-transparent text-[#8b949e] hover:text-white'
@@ -555,47 +532,31 @@ export default function StrakvuPage() {
                 ))}
               </div>
 
-              {/* Action and Layout Switcher */}
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <Button
-                  size="sm"
-                  onClick={() => setIsMakePushModalOpen(true)}
-                  className="h-7 text-xs font-mono bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/80"
+              {/* Layout Switcher */}
+              <div className="hidden lg:flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] self-end sm:self-auto">
+                <button
+                  onClick={() => setLayoutMode('split')}
+                  className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+                    layoutMode === 'split' ? 'bg-[#21262d] text-white' : 'text-[#8b949e] hover:text-white'
+                  }`}
                 >
-                  <GitCommit className="h-3 w-3 mr-1" />
-                  <span>+ Push</span>
-                </Button>
-
-                <div className="hidden lg:flex items-center gap-1 text-xs font-mono text-[#8b949e]">
-                  <button
-                    onClick={() => setLayoutMode('split')}
-                    className={`px-2 py-1 rounded text-xs transition-colors ${
-                      layoutMode === 'split'
-                        ? 'bg-[#21262d] text-white border border-[#30363d]'
-                        : 'text-[#8b949e] hover:text-white'
-                    }`}
-                  >
-                    Split
-                  </button>
-                  <button
-                    onClick={() => setLayoutMode('stacked')}
-                    className={`px-2 py-1 rounded text-xs transition-colors ${
-                      layoutMode === 'stacked'
-                        ? 'bg-[#21262d] text-white border border-[#30363d]'
-                        : 'text-[#8b949e] hover:text-white'
-                    }`}
-                  >
-                    Stacked
-                  </button>
-                </div>
+                  Split View
+                </button>
+                <button
+                  onClick={() => setLayoutMode('stacked')}
+                  className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+                    layoutMode === 'stacked' ? 'bg-[#21262d] text-white' : 'text-[#8b949e] hover:text-white'
+                  }`}
+                >
+                  Stacked
+                </button>
               </div>
             </div>
 
-            {/* Main Interactive Grid and Timeline */}
+            {/* Activity Grid + Day Timeline Section */}
             {layoutMode === 'split' ? (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Calendar Grid (Takes 7 cols on desktop, full width on mobile) */}
-                <div className="lg:col-span-7">
+                <div className="lg:col-span-7 xl:col-span-7">
                   <CalendarGrid
                     currentDate={currentDate}
                     onPrevMonth={handlePrevMonth}
@@ -607,13 +568,11 @@ export default function StrakvuPage() {
                   />
                 </div>
 
-                {/* Day Timeline (Takes 5 cols on desktop, slides below on mobile) */}
-                <div className="lg:col-span-5 sticky top-20">
+                <div className="lg:col-span-5 xl:col-span-5">
                   <DayTimeline
                     day={selectedDay}
                     onClose={() => setSelectedDayDate(null)}
                     onAddAIChat={handleAddAIChat}
-                    onOpenMakePush={() => setIsMakePushModalOpen(true)}
                   />
                 </div>
               </div>
@@ -633,7 +592,6 @@ export default function StrakvuPage() {
                   day={selectedDay}
                   onClose={() => setSelectedDayDate(null)}
                   onAddAIChat={handleAddAIChat}
-                  onOpenMakePush={() => setIsMakePushModalOpen(true)}
                 />
               </div>
             )}
@@ -641,54 +599,11 @@ export default function StrakvuPage() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-[#21262d] bg-[#090d14] py-6 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#8b949e]">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-white">Strakvu</span>
-            <span>·</span>
-            <span>Developer Activity Calendar</span>
-            <span>·</span>
-            <span className="text-[#39d353]">Live GitHub Connected</span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setActiveView('dashboard')}
-              className="hover:text-white transition-colors"
-            >
-              Activity Grid
-            </button>
-            <button
-              onClick={() => setIsMakePushModalOpen(true)}
-              className="hover:text-emerald-400 transition-colors"
-            >
-              Record Push
-            </button>
-            <button
-              onClick={() => setIsConnectModalOpen(true)}
-              className="hover:text-emerald-400 transition-colors"
-            >
-              Connect GitHub
-            </button>
-          </div>
-        </div>
-      </footer>
-
-      {/* GitHub Connect Modal */}
+      {/* Connect Account Modal */}
       <ConnectModal
         open={isConnectModalOpen}
         onOpenChange={setIsConnectModalOpen}
         onConnectSuccess={handleConnectSuccess}
-      />
-
-      {/* Make First Push to GitHub Modal */}
-      <MakePushModal
-        open={isMakePushModalOpen}
-        onOpenChange={setIsMakePushModalOpen}
-        selectedDate={effectiveSelectedDate || `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`}
-        defaultRepo={baseProfile.topRepo || 'sanjayanand/strakvu'}
-        onPushSuccess={handleRecordPush}
       />
     </div>
   );

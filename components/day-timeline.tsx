@@ -22,6 +22,7 @@ import {
   Send,
   MessageSquare,
   Wand2,
+  Layers,
 } from 'lucide-react';
 import { DayActivity, ActivityEvent, AIChatSession } from '@/types/activity';
 import { Badge } from './ui/badge';
@@ -32,10 +33,9 @@ interface DayTimelineProps {
   day: DayActivity | null;
   onClose?: () => void;
   onAddAIChat?: (date: string, chat: Omit<AIChatSession, 'id' | 'timestamp' | 'time'>) => void;
-  onOpenMakePush?: () => void;
 }
 
-export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTimelineProps) {
+export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'github' | 'ai' | 'chrome'>('all');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [expandedPushes, setExpandedPushes] = useState<Record<string, boolean>>({});
@@ -52,7 +52,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
     return (
       <div className="rounded-xl border border-[#30363d] bg-[#0d1117] p-8 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#161b22] border border-[#30363d] text-[#8b949e] mb-3">
-          <Clock className="h-6 w-6" />
+          <Clock className="h-6 w-6 text-emerald-400" />
         </div>
         <h3 className="text-sm font-semibold font-mono text-white">Select a Day</h3>
         <p className="text-xs text-[#8b949e] mt-1 max-w-sm mx-auto">
@@ -99,7 +99,11 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
     setIsAddingChat(false);
   };
 
-  // Calculate day additions/deletions
+  // Calculate day additions/deletions and total commits
+  const totalCommitsCount = day.events.reduce((sum, e) => {
+    return sum + (e.commits && e.commits.length > 0 ? e.commits.length : e.type === 'commit' || e.type === 'push' ? 1 : 0);
+  }, 0);
+
   const totalAdditions = day.events.reduce((sum, e) => sum + (e.additions || 0), 0);
   const totalDeletions = day.events.reduce((sum, e) => sum + (e.deletions || 0), 0);
 
@@ -119,7 +123,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                 Daily Work Log
               </span>
               {day.isToday && (
-                <Badge variant="default" className="text-[10px] py-0 px-1.5">
+                <Badge variant="default" className="text-[10px] py-0 px-1.5 bg-[#238636]">
                   Today
                 </Badge>
               )}
@@ -130,7 +134,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
             <p className="text-xs text-[#8b949e] font-mono mt-0.5">
               {day.totalActivities === 0
                 ? 'No code activity logged'
-                : `${ghCount} git ${ghCount === 1 ? 'action' : 'actions'} · ${aiCount} AI ${aiCount === 1 ? 'prompt' : 'prompts'} · ${day.repos.length} ${day.repos.length === 1 ? 'repo' : 'repos'}`}
+                : `${totalCommitsCount} real commit${totalCommitsCount === 1 ? '' : 's'} across ${day.repos.length} repo${day.repos.length === 1 ? '' : 's'} · ${aiCount} AI prompt${aiCount === 1 ? '' : 's'}`}
             </p>
           </div>
 
@@ -154,18 +158,18 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
           </div>
         </div>
 
-        {/* Humanoid Narrative / What I worked on today */}
+        {/* Developer Story · What was built on that date */}
         {day.humanSummary ? (
           <div className="mt-4 p-3.5 rounded-lg border border-emerald-900/40 bg-emerald-950/20 text-xs text-[#e6edf3] font-sans leading-relaxed">
             <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-medium text-[11px] mb-1">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Developer Story · What was built today</span>
+              <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Developer Story · What was built on this date</span>
             </div>
-            <p className="text-[#c9d1d9]">{day.humanSummary}</p>
+            <p className="text-[#c9d1d9] leading-relaxed font-sans">{day.humanSummary}</p>
           </div>
         ) : null}
 
-        {/* Connected Tooling Filter Tabs */}
+        {/* Tooling Filter Tabs */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#21262d]/60">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
@@ -189,7 +193,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
               )}
             >
               <GitCommit className="h-3 w-3 text-emerald-400" />
-              <span>GitHub ({ghCount})</span>
+              <span>GitHub Commits ({ghCount})</span>
             </button>
             <button
               onClick={() => setActiveTab('ai')}
@@ -201,7 +205,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
               )}
             >
               <Bot className="h-3 w-3 text-purple-400" />
-              <span>AI Chats ({aiCount})</span>
+              <span>AI Prompts ({aiCount})</span>
             </button>
             {chromeCount > 0 && (
               <button
@@ -214,24 +218,13 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                 )}
               >
                 <Compass className="h-3 w-3 text-sky-400" />
-                <span>Chrome ({chromeCount})</span>
+                <span>Research ({chromeCount})</span>
               </button>
             )}
           </div>
 
-          {/* Actions */}
+          {/* Action button */}
           <div className="flex items-center gap-2 ml-auto">
-            {onOpenMakePush && (
-              <Button
-                size="sm"
-                onClick={onOpenMakePush}
-                className="h-7 px-2.5 text-xs font-mono bg-[#238636] hover:bg-[#2ea043] text-white"
-              >
-                <GitCommit className="h-3 w-3 mr-1" />
-                <span>+ Push</span>
-              </Button>
-            )}
-
             <Button
               size="sm"
               variant="outline"
@@ -239,7 +232,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
               className="h-7 px-2.5 text-xs font-mono border-[#30363d] bg-[#0d1117] text-purple-300 hover:text-white hover:bg-purple-950/40"
             >
               <Plus className="h-3 w-3 mr-1" />
-              <span>Paste AI Chat</span>
+              <span>Log AI Prompt</span>
             </Button>
           </div>
         </div>
@@ -290,7 +283,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                 type="text"
                 value={targetRepo}
                 onChange={(e) => setTargetRepo(e.target.value)}
-                placeholder="sanjayanand/strakvu"
+                placeholder={day.repos[0] || 'sanjayanand/strakvu'}
                 className="w-full rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-purple-500"
               />
             </div>
@@ -345,8 +338,8 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
         </form>
       )}
 
-      {/* Timeline Stream */}
-      <div className="p-4 sm:p-6">
+      {/* Timeline Stream with max height container (no infinite scroll) */}
+      <div className="p-4 sm:p-5 max-h-[520px] overflow-y-auto custom-scrollbar">
         {day.events.length === 0 && (!day.aiSessions || day.aiSessions.length === 0) ? (
           <div className="py-12 text-center">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#161b22] border border-[#30363d] text-[#8b949e] mb-3">
@@ -358,20 +351,9 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
             <p className="mt-1 text-xs text-[#8b949e] max-w-sm mx-auto font-sans leading-relaxed">
               No GitHub events or code pushes found for this date.
             </p>
-            {onOpenMakePush && (
-              <div className="mt-4">
-                <Button
-                  onClick={onOpenMakePush}
-                  className="bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs px-4"
-                >
-                  <GitCommit className="h-3.5 w-3.5 mr-1.5" />
-                  <span>Make First Push to GitHub</span>
-                </Button>
-              </div>
-            )}
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-5">
             {/* Show AI sessions if on 'all' or 'ai' tab */}
             {(activeTab === 'all' || activeTab === 'ai') && day.aiSessions && day.aiSessions.length > 0 && (
               <div className="space-y-3">
@@ -407,7 +389,7 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                         &quot;{session.promptTopic}&quot;
                       </p>
 
-                      <p className="mt-1.5 text-xs text-[#8b949e] leading-relaxed">
+                      <p className="mt-1.5 text-xs text-[#8b949e] leading-relaxed font-sans">
                         {session.aiResponseSummary}
                       </p>
 
@@ -427,17 +409,26 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
             {/* GitHub Commits & Events */}
             {(activeTab === 'all' || activeTab === 'github') && day.events.length > 0 && (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-semibold">
-                  <GitCommit className="h-3.5 w-3.5" />
-                  <span>GitHub Events & Commits</span>
+                <div className="flex items-center justify-between text-xs font-mono text-emerald-400 font-semibold">
+                  <div className="flex items-center gap-2">
+                    <GitCommit className="h-3.5 w-3.5" />
+                    <span>GitHub Events & Real Commits</span>
+                  </div>
+                  <span className="text-[11px] text-[#8b949e]">
+                    {day.events.length} event{day.events.length === 1 ? '' : 's'}
+                  </span>
                 </div>
 
-                <div className="relative border-l border-[#30363d] ml-3 sm:ml-4 space-y-6 sm:space-y-8">
+                <div className="relative border-l border-[#30363d] ml-3 sm:ml-4 space-y-4 sm:space-y-5">
                   {day.events.map((evt) => {
-                    const isPushExpanded = expandedPushes[evt.id] ?? false;
+                    const isPushExpanded = expandedPushes[evt.id] ?? true;
+                    const commitHash = evt.hash || 'cmt';
+                    const commitUrl = evt.repoUrl
+                      ? `${evt.repoUrl}/commit/${evt.hash}`
+                      : `https://github.com/${evt.repo}/commit/${evt.hash}`;
 
                     return (
-                      <div key={evt.id} className="relative pl-6 sm:pl-8 group">
+                      <div key={evt.id} className="relative pl-6 sm:pl-7 group">
                         {/* Timeline Node Icon */}
                         <div
                           className={cn(
@@ -459,9 +450,9 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                         </div>
 
                         {/* Event Card Content */}
-                        <div className="rounded-xl border border-[#30363d] bg-[#161b22]/70 p-3.5 sm:p-4 hover:border-[#484f58] transition-colors">
+                        <div className="rounded-xl border border-[#30363d] bg-[#161b22]/70 p-3 sm:p-3.5 hover:border-[#484f58] transition-colors">
                           {/* Header Row: Time & Repo info */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono mb-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono mb-1.5">
                             <div className="flex items-center gap-2">
                               {/* Exact timestamp */}
                               <span className="flex items-center gap-1 text-[#8b949e] font-mono text-[11px]">
@@ -471,14 +462,20 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
 
                               <span className="text-[#484f58]">·</span>
 
-                              {/* Repo Name */}
-                              <span className="font-semibold text-white hover:text-emerald-400 transition-colors">
-                                {evt.repo}
-                              </span>
+                              {/* Repo Link */}
+                              <a
+                                href={evt.repoUrl || `https://github.com/${evt.repo}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-white hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
+                              >
+                                <span>{evt.repo}</span>
+                                <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                              </a>
 
                               {/* Branch badge */}
                               {evt.branch && (
-                                <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-mono">
+                                <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-mono text-[#8b949e]">
                                   {evt.branch}
                                 </Badge>
                               )}
@@ -503,43 +500,47 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                           </p>
 
                           {evt.description && (
-                            <p className="mt-1 text-xs text-[#8b949e] leading-relaxed">
+                            <p className="mt-1 text-xs text-[#8b949e] leading-relaxed font-sans">
                               {evt.description}
                             </p>
                           )}
 
-                          {/* Linked AI Prompt indicator if matched */}
-                          {evt.linkedPrompt && (
-                            <div className="mt-2 text-[11px] text-purple-300 font-mono bg-purple-950/30 border border-purple-900/40 rounded px-2 py-1 flex items-center gap-1.5">
-                              <Wand2 className="h-3 w-3 text-purple-400 shrink-0" />
-                              <span className="truncate">Prompt: {evt.linkedPrompt}</span>
-                            </div>
-                          )}
-
-                          {/* Hash & Copy on Commit / Push */}
+                          {/* Real Git Hash & Direct Link to GitHub */}
                           {evt.hash && (
-                            <div className="mt-2.5 flex items-center gap-2 pt-2 border-t border-[#21262d] text-xs font-mono text-[#8b949e]">
-                              <span className="text-[11px] text-[#6e7681]">commit:</span>
-                              <code className="text-[#58a6ff] bg-[#0d1117] px-1.5 py-0.5 rounded border border-[#30363d] text-[11px]">
-                                {evt.hash}
-                              </code>
-                              <button
-                                onClick={() => handleCopy(evt.hash!)}
-                                className="p-1 rounded hover:bg-[#21262d] hover:text-white transition-colors"
-                                title="Copy commit hash"
+                            <div className="mt-2 flex items-center justify-between pt-2 border-t border-[#21262d] text-xs font-mono text-[#8b949e]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-[#6e7681]">commit:</span>
+                                <code className="text-[#58a6ff] bg-[#0d1117] px-1.5 py-0.5 rounded border border-[#30363d] text-[11px]">
+                                  {evt.hash}
+                                </code>
+                                <button
+                                  onClick={() => handleCopy(evt.hash!)}
+                                  className="p-1 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+                                  title="Copy commit hash"
+                                >
+                                  {copiedHash === evt.hash ? (
+                                    <Check className="h-3 w-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="h-3 w-3" />
+                                  )}
+                                </button>
+                              </div>
+
+                              <a
+                                href={commitUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-mono"
                               >
-                                {copiedHash === evt.hash ? (
-                                  <Check className="h-3 w-3 text-emerald-400" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </button>
+                                <span>View on GitHub</span>
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
                             </div>
                           )}
 
                           {/* Sub-commits list for push events */}
                           {evt.commits && evt.commits.length > 1 && (
-                            <div className="mt-3 pt-2 border-t border-[#21262d]">
+                            <div className="mt-2.5 pt-2 border-t border-[#21262d]">
                               <button
                                 onClick={() => togglePushExpanded(evt.id)}
                                 className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 hover:text-emerald-300 transition-colors"
@@ -555,26 +556,37 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
                               </button>
 
                               {isPushExpanded && (
-                                <div className="mt-2.5 space-y-2 pl-2 border-l border-[#30363d]">
-                                  {evt.commits.map((sub) => (
-                                    <div
-                                      key={sub.id}
-                                      className="flex flex-col sm:flex-row sm:items-center justify-between text-xs font-mono gap-1 py-1"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <code className="text-[#58a6ff] text-[11px] shrink-0">
-                                          {sub.hash}
-                                        </code>
-                                        <span className="text-[#c9d1d9] truncate font-sans">
-                                          {sub.message}
-                                        </span>
+                                <div className="mt-2 space-y-1.5 pl-2 border-l border-[#30363d]">
+                                  {evt.commits.map((sub) => {
+                                    const subCommitUrl = sub.repoUrl
+                                      ? `${sub.repoUrl}/commit/${sub.hash}`
+                                      : `https://github.com/${sub.repo}/commit/${sub.hash}`;
+
+                                    return (
+                                      <div
+                                        key={sub.id}
+                                        className="flex items-center justify-between text-xs font-mono gap-2 py-0.5 hover:bg-[#21262d]/40 rounded px-1"
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <code className="text-[#58a6ff] text-[11px] shrink-0">
+                                            {sub.hash}
+                                          </code>
+                                          <span className="text-[#c9d1d9] truncate font-sans text-xs">
+                                            {sub.message}
+                                          </span>
+                                        </div>
+                                        <a
+                                          href={subCommitUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-[#8b949e] hover:text-emerald-400 shrink-0"
+                                          title="View commit on GitHub"
+                                        >
+                                          <ExternalLink className="h-3 w-3" />
+                                        </a>
                                       </div>
-                                      <div className="flex items-center gap-2 text-[10px] text-[#8b949e] shrink-0 self-end sm:self-auto">
-                                        <span className="text-[#39d353]">+{sub.additions}</span>
-                                        <span className="text-[#f85149]">-{sub.deletions}</span>
-                                      </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>

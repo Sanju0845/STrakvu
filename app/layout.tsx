@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   ),
   title: 'Strakvu · Developer Activity Calendar',
   description: 'Developer activity calendar that connects to GitHub and visualizes daily commits, pushes, pull requests, and repository milestones in a clean timeline view.',
+  icons: {
+    icon: '/strakvu.png',
+    shortcut: '/strakvu.png',
+    apple: '/strakvu.png',
+  },
   openGraph: {
     title: 'Strakvu · Developer Activity Calendar',
     description: 'Developer activity calendar that connects to GitHub and visualizes daily commits, pushes, pull requests, and repository milestones in a clean timeline view.',
