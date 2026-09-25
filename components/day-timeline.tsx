@@ -353,10 +353,10 @@ export function DayTimeline({ day, onClose, onAddAIChat, onOpenMakePush }: DayTi
               <GitCommit className="h-5 w-5 text-emerald-400" />
             </div>
             <h4 className="text-sm font-semibold font-mono text-white">
-              Clean Canvas · No Activity Yet
+              No activity on this day
             </h4>
             <p className="mt-1 text-xs text-[#8b949e] max-w-sm mx-auto font-sans leading-relaxed">
-              No commits or AI prompts recorded for this date. Push your code or log your first commit to illuminate this day on your calendar.
+              No GitHub events or code pushes found for this date.
             </p>
             {onOpenMakePush && (
               <div className="mt-4">

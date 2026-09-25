@@ -2,6 +2,12 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: [
+    'ais-dev-jhvahrohqrzpnxzt5crimh-308969877267.asia-southeast1.run.app',
+    'ais-pre-jhvahrohqrzpnxzt5crimh-308969877267.asia-southeast1.run.app',
+    '*.run.app',
+    'localhost:3000',
+  ],
   eslint: {
     ignoreDuringBuilds: true,
   },

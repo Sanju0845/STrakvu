@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { GitCommit, Github, Sparkles, ExternalLink, ShieldCheck, CheckCircle2, ChevronDown, UserCheck } from 'lucide-react';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import { GitCommit, Github, CheckCircle2, ChevronDown, LogOut, ArrowRight, Loader2 } from 'lucide-react';
 import { DeveloperProfile } from '@/types/activity';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 
 interface NavbarProps {
   profile: DeveloperProfile;
@@ -21,7 +21,27 @@ export function Navbar({
   activeView,
   setActiveView,
 }: NavbarProps) {
+  const { data: session, status } = useSession();
   const [showDropdown, setShowDropdown] = React.useState(false);
+
+  // Derive active authenticated user from NextAuth session if available
+  const isSessionAuth = Boolean(session?.user);
+  const avatarUrl = session?.user?.image || profile.avatarUrl;
+  const displayName = session?.user?.name || profile.displayName;
+  // @ts-expect-error custom username field
+  const username = (session?.user?.username as string) || (session?.user?.name as string) || profile.username;
+
+  const handleSignOut = async () => {
+    setShowDropdown(false);
+    onDisconnectClick();
+    if (session) {
+      await signOut({ callbackUrl: '/?view=dashboard' });
+    }
+  };
+
+  const handleDirectConnect = () => {
+    onConnectClick();
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#21262d] bg-[#0b0f17]/90 backdrop-blur-md">
@@ -41,7 +61,7 @@ export function Navbar({
                   Strakvu
                 </span>
                 <span className="hidden sm:inline-flex text-[10px] uppercase font-mono tracking-wider px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60 text-emerald-400">
-                  beta
+                  live
                 </span>
               </div>
               <p className="hidden md:block text-[11px] text-[#8b949e] font-sans">
@@ -70,14 +90,19 @@ export function Navbar({
                   : 'text-[#8b949e] hover:text-white'
               }`}
             >
-              About & Connect
+              About
             </button>
           </nav>
         </div>
 
         {/* Right side Actions */}
         <div className="flex items-center gap-2.5 sm:gap-3">
-          {profile.isConnected ? (
+          {status === 'loading' ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#30363d] bg-[#161b22] text-xs font-mono text-[#8b949e]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+              <span className="hidden sm:inline">Checking auth...</span>
+            </div>
+          ) : isSessionAuth || profile.isConnected ? (
             <div className="relative">
               <button
                 onClick={() => setShowDropdown(!showDropdown)}
@@ -86,15 +111,15 @@ export function Navbar({
                 <div className="relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={profile.avatarUrl}
-                    alt={profile.username}
+                    src={avatarUrl}
+                    alt={username}
                     className="h-6 w-6 rounded-full ring-1 ring-emerald-500/60 object-cover"
                   />
                   <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#39d353] ring-1 ring-[#0d1117]" />
                 </div>
                 <div className="hidden sm:block text-left">
                   <div className="text-xs font-medium text-white flex items-center gap-1 font-mono">
-                    <span>@{profile.username}</span>
+                    <span>@{username}</span>
                   </div>
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-[#8b949e]" />
@@ -108,15 +133,15 @@ export function Navbar({
                   />
                   <div className="absolute right-0 mt-2 w-64 rounded-xl border border-[#30363d] bg-[#161b22] p-2 shadow-2xl z-50 animate-in fade-in-0 zoom-in-95">
                     <div className="p-2 border-b border-[#21262d]">
-                      <p className="text-xs font-semibold text-white font-mono">
-                        {profile.displayName}
+                      <p className="text-xs font-semibold text-white font-mono truncate">
+                        {displayName}
                       </p>
-                      <p className="text-[11px] text-[#8b949e] font-mono">
-                        github.com/{profile.username}
+                      <p className="text-[11px] text-[#8b949e] font-mono truncate">
+                        github.com/{username}
                       </p>
                       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>GitHub OAuth Synced</span>
+                        <span>{isSessionAuth ? 'GitHub OAuth Active' : 'Connected via Username'}</span>
                       </div>
                     </div>
 
@@ -137,16 +162,14 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-[#c9d1d9] hover:bg-[#21262d] hover:text-white font-mono transition-colors"
                       >
-                        Feature Overview
+                        About & Integration
                       </button>
                       <button
-                        onClick={() => {
-                          setShowDropdown(false);
-                          onDisconnectClick();
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-red-400 hover:bg-red-950/30 hover:text-red-300 font-mono transition-colors"
+                        onClick={handleSignOut}
+                        className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-red-400 hover:bg-red-950/30 hover:text-red-300 font-mono transition-colors flex items-center gap-1.5"
                       >
-                        Disconnect Account
+                        <LogOut className="h-3.5 w-3.5" />
+                        <span>Sign Out / Disconnect</span>
                       </button>
                     </div>
                   </div>
@@ -155,7 +178,7 @@ export function Navbar({
             </div>
           ) : (
             <Button
-              onClick={onConnectClick}
+              onClick={handleDirectConnect}
               variant="default"
               size="sm"
               className="bg-[#238636] hover:bg-[#2ea043] font-mono font-medium text-xs sm:text-sm px-3 sm:px-4"
@@ -165,13 +188,13 @@ export function Navbar({
             </Button>
           )}
 
-          {/* Quick Mobile nav toggle between view */}
+          {/* Mobile nav toggle */}
           <div className="flex md:hidden items-center">
             <button
               onClick={() => setActiveView(activeView === 'dashboard' ? 'landing' : 'dashboard')}
               className="px-2.5 py-1.5 rounded-lg border border-[#30363d] bg-[#161b22] text-xs font-mono text-[#c9d1d9]"
             >
-              {activeView === 'dashboard' ? 'Info' : 'Grid'}
+              {activeView === 'dashboard' ? 'About' : 'Grid'}
             </button>
           </div>
         </div>
