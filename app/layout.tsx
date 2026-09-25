@@ -3,6 +3,10 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://strakvu.vercel.app')
+  ),
   title: 'Strakvu · Developer Activity Calendar',
   description: 'Developer activity calendar that connects to GitHub and visualizes daily commits, pushes, pull requests, and repository milestones in a clean timeline view.',
   openGraph: {

@@ -21,7 +21,9 @@ export function Navbar({
   activeView,
   setActiveView,
 }: NavbarProps) {
-  const { data: session, status } = useSession();
+  const sessionHook = useSession();
+  const session = sessionHook?.data;
+  const status = sessionHook?.status || 'unauthenticated';
   const [showDropdown, setShowDropdown] = React.useState(false);
 
   // Derive active authenticated user from NextAuth session if available

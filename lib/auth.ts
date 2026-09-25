@@ -1,11 +1,20 @@
 import { AuthOptions } from 'next-auth';
 import GithubProvider from 'next-auth/providers/github';
 
+// Guard against empty NEXTAUTH_URL in CI/CD environments like Vercel
+if (!process.env.NEXTAUTH_URL || process.env.NEXTAUTH_URL === '') {
+  if (process.env.VERCEL_URL) {
+    process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`;
+  } else {
+    process.env.NEXTAUTH_URL = 'http://localhost:3000';
+  }
+}
+
 export const authOptions: AuthOptions = {
   providers: [
     GithubProvider({
-      clientId: process.env.GITHUB_ID || '',
-      clientSecret: process.env.GITHUB_SECRET || '',
+      clientId: process.env.GITHUB_ID || 'dummy_id',
+      clientSecret: process.env.GITHUB_SECRET || 'dummy_secret',
       authorization: {
         params: {
           scope: 'read:user user:email repo',

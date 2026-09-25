@@ -49,7 +49,9 @@ function getEmptyServerSnapshot(): string {
 }
 
 export default function StrakvuPage() {
-  const { data: session, status: sessionStatus } = useSession();
+  const sessionHook = useSession();
+  const session = sessionHook?.data;
+  const sessionStatus = sessionHook?.status || 'unauthenticated';
 
   const [activeView, setActiveView] = useState<'dashboard' | 'landing'>(() => {
     if (typeof window !== 'undefined') {
