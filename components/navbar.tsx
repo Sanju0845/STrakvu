@@ -28,10 +28,11 @@ export function Navbar({
 
   // Derive active authenticated user from NextAuth session if available
   const isSessionAuth = Boolean(session?.user);
+  const isLoggedIn = isSessionAuth || (profile.isConnected && Boolean(profile.username));
   const avatarUrl = session?.user?.image || profile.avatarUrl;
-  const displayName = session?.user?.name || profile.displayName;
+  const displayName = session?.user?.name || profile.displayName || 'Developer';
   // @ts-expect-error custom username field
-  const username = (session?.user?.username as string) || (session?.user?.name as string) || profile.username;
+  const username = (session?.user?.username as string) || (session?.user?.name as string) || profile.username || 'developer';
 
   const handleSignOut = async () => {
     setShowDropdown(false);
@@ -113,19 +114,25 @@ export function Navbar({
               <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
               <span className="hidden sm:inline">Checking auth...</span>
             </div>
-          ) : isSessionAuth || profile.isConnected ? (
+          ) : isLoggedIn ? (
             <div className="relative">
               <button
                 onClick={() => setShowDropdown(!showDropdown)}
                 className="flex items-center gap-2 rounded-lg border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 hover:border-[#484f58] transition-colors text-left"
               >
                 <div className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={avatarUrl}
-                    alt={username}
-                    className="h-6 w-6 rounded-full ring-1 ring-emerald-500/60 object-cover"
-                  />
+                  {avatarUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={avatarUrl}
+                      alt={username}
+                      className="h-6 w-6 rounded-full ring-1 ring-emerald-500/60 object-cover"
+                    />
+                  ) : (
+                    <div className="h-6 w-6 rounded-full bg-emerald-950 border border-emerald-700 flex items-center justify-center text-[10px] font-mono text-emerald-300">
+                      {username.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#39d353] ring-1 ring-[#0d1117]" />
                 </div>
                 <div className="hidden sm:block text-left">

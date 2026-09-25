@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { Github, KeyRound, Shield, CheckCircle2, ArrowRight, Loader2, Sparkles, ExternalLink, HelpCircle } from 'lucide-react';
+import { Github, KeyRound, Shield, CheckCircle2, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 
@@ -18,7 +18,7 @@ export function ConnectModal({
   onConnectSuccess,
 }: ConnectModalProps) {
   const [connectMethod, setConnectMethod] = useState<'oauth' | 'manual'>('oauth');
-  const [usernameInput, setUsernameInput] = useState('sanjayanand');
+  const [usernameInput, setUsernameInput] = useState('');
   const [tokenInput, setTokenInput] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -31,7 +31,6 @@ export function ConnectModal({
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState(false);
-  const [showConfigHelp, setShowConfigHelp] = useState(false);
 
   const handleOAuthSignIn = async () => {
     setIsOAuthLoading(true);
@@ -99,7 +98,7 @@ export function ConnectModal({
               <span>1-Click GitHub Authorization</span>
             </div>
             <p className="text-xs text-[#c9d1d9] font-sans leading-relaxed">
-              Authenticate securely with GitHub OAuth. Strakvu will read your activity events (pushes, commits, repositories) and populate your 90-day calendar automatically.
+              Authenticate securely with GitHub. Strakvu will read your activity events (pushes, commits, repositories) and populate your activity calendar automatically.
             </p>
 
             <Button
@@ -121,31 +120,6 @@ export function ConnectModal({
               )}
             </Button>
           </div>
-
-          {/* Configuration Hint for OAuth Developer Settings */}
-          <div className="rounded-lg border border-[#21262d] bg-[#090d14] p-3 text-xs font-mono text-[#8b949e]">
-            <button
-              onClick={() => setShowConfigHelp(!showConfigHelp)}
-              className="w-full flex items-center justify-between text-left text-xs text-[#8b949e] hover:text-white"
-            >
-              <span className="flex items-center gap-1.5 text-emerald-400">
-                <HelpCircle className="h-3.5 w-3.5" />
-                <span>Configuring GitHub OAuth App?</span>
-              </span>
-              <span className="text-[11px] underline">
-                {showConfigHelp ? 'Hide' : 'View callback URL'}
-              </span>
-            </button>
-
-            {showConfigHelp && (
-              <div className="mt-2.5 pt-2 border-t border-[#21262d] space-y-1.5 text-[11px]">
-                <p>In GitHub Developer Settings, set your Authorization callback URL to:</p>
-                <code className="block bg-[#161b22] p-2 rounded border border-[#30363d] text-emerald-300 break-all select-all">
-                  https://ais-dev-jhvahrohqrzpnxzt5crimh-308969877267.asia-southeast1.run.app/api/auth/callback/github
-                </code>
-              </div>
-            )}
-          </div>
         </div>
       ) : (
         <form onSubmit={handleManualSync} className="space-y-4 pt-1">
@@ -161,12 +135,12 @@ export function ConnectModal({
                 type="text"
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="sanjayanand"
+                placeholder="username"
                 className="w-full rounded-lg border border-[#30363d] bg-[#090d14] pl-28 pr-3 py-2 text-xs font-mono text-white placeholder:text-[#484f58] focus:border-emerald-500 focus:outline-none"
               />
             </div>
             <p className="text-[11px] text-[#6e7681] font-mono mt-1">
-              Loads public GitHub events for this user instantly without login.
+              Loads public GitHub events for this user without logging in.
             </p>
           </div>
 

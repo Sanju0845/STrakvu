@@ -213,8 +213,10 @@ export default function StrakvuPage() {
     } else if (sessionStatus === 'unauthenticated' && !hasInitialFetched.current) {
       hasInitialFetched.current = true;
       const storedToken = typeof window !== 'undefined' ? localStorage.getItem('strakvu_github_token') || undefined : undefined;
-      const targetUser = baseProfile.username || 'sanjayanand';
-      fetchGitHubActivity(targetUser, storedToken);
+      const targetUser = baseProfile.username;
+      if (targetUser || storedToken) {
+        fetchGitHubActivity(targetUser, storedToken);
+      }
     }
   }, [mounted, sessionStatus, session, fetchGitHubActivity, baseProfile.username]);
 
@@ -226,11 +228,7 @@ export default function StrakvuPage() {
   };
 
   const handleDisconnect = () => {
-    const disconnected = {
-      ...baseProfile,
-      isConnected: false,
-    };
-    handleUpdateProfile(disconnected);
+    setProfileOverride(INITIAL_DEVELOPER);
     setGithubEventsByDate({});
     setStoriesByDate({});
     setFetchedRepos([]);
@@ -238,18 +236,22 @@ export default function StrakvuPage() {
       try {
         localStorage.removeItem('strakvu_github_token');
         localStorage.removeItem('strakvu_profile');
+        localStorage.removeItem('strakvu_custom_pushes');
+        localStorage.removeItem('strakvu_aichats');
       } catch {}
     }
   };
 
   const handleConnectSuccess = (customUsername?: string, token?: string) => {
-    const userToFetch = customUsername || 'sanjayanand';
+    const userToFetch = customUsername;
     if (typeof window !== 'undefined' && token) {
       try {
         localStorage.setItem('strakvu_github_token', token);
       } catch {}
     }
-    fetchGitHubActivity(userToFetch, token, true);
+    if (userToFetch || token) {
+      fetchGitHubActivity(userToFetch, token, true);
+    }
     setActiveView('dashboard');
   };
 
@@ -269,6 +271,11 @@ export default function StrakvuPage() {
     setCurrentDate(today);
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     setSelectedDayDate(todayStr);
+  };
+
+  const handleSelectMonthYear = (year: number, month: number) => {
+    setCurrentDate(new Date(year, month, 1));
+    setSelectedDayDate(null);
   };
 
   // Add custom AI chat session for a day
@@ -405,6 +412,28 @@ export default function StrakvuPage() {
     return Object.values(githubEventsByDate).reduce((sum, evts) => sum + evts.length, 0);
   }, [githubEventsByDate]);
 
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#0b0f17] text-[#e6edf3] flex flex-col font-sans">
+        <header className="sticky top-0 z-40 w-full border-b border-[#21262d] bg-[#0b0f17]/90 backdrop-blur-md h-16 flex items-center px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/strakvu.png" alt="Strakvu" className="h-7 w-7 object-contain" />
+            </div>
+            <span className="text-lg font-bold font-mono text-white">Strakvu</span>
+          </div>
+        </header>
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 flex items-center justify-center">
+          <div className="flex items-center gap-3 text-xs font-mono text-[#8b949e]">
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+            <span>Loading Strakvu Calendar...</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0b0f17] text-[#e6edf3] flex flex-col font-sans selection:bg-[#238636] selection:text-white antialiased" suppressHydrationWarning>
       {/* Navbar */}
@@ -431,37 +460,47 @@ export default function StrakvuPage() {
               <div className="flex items-center gap-2.5">
                 {isLoadingGitHub ? (
                   <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                ) : (
+                ) : baseProfile.isConnected && baseProfile.username ? (
                   <span className="h-2.5 w-2.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
+                ) : (
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#8b949e]" />
                 )}
                 <div>
                   <p className="text-xs font-mono font-medium text-white flex items-center gap-2">
-                    <span>GitHub Activity: @{baseProfile.username || 'developer'}</span>
-                    {lastSyncedTime && (
+                    <span>
+                      {baseProfile.isConnected && baseProfile.username
+                        ? `GitHub Activity: @${baseProfile.username}`
+                        : 'GitHub: Not Connected'}
+                    </span>
+                    {lastSyncedTime && baseProfile.isConnected && (
                       <span className="text-[10px] text-[#8b949e]">
                         (Synced {lastSyncedTime})
                       </span>
                     )}
                   </p>
                   <p className="text-[11px] text-[#8b949e]">
-                    {totalRealEventsCount > 0
-                      ? `Loaded ${totalRealEventsCount} real commits and operations across ${availableRepos.length} repositories.`
-                      : 'Syncing live GitHub repository activity down to the minute...'}
+                    {baseProfile.isConnected && baseProfile.username
+                      ? totalRealEventsCount > 0
+                        ? `Loaded ${totalRealEventsCount} real commits and operations across ${availableRepos.length} repositories.`
+                        : 'Connected to GitHub. Syncing events...'
+                      : 'Connect your GitHub account or enter a public username to populate your activity calendar.'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fetchGitHubActivity(baseProfile.username, undefined, true)}
-                  disabled={isLoadingGitHub}
-                  className="h-8 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
-                >
-                  <RefreshCw className={`h-3 w-3 mr-1.5 ${isLoadingGitHub ? 'animate-spin' : ''}`} />
-                  <span>Refresh</span>
-                </Button>
+                {baseProfile.isConnected && baseProfile.username && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fetchGitHubActivity(baseProfile.username, undefined, true)}
+                    disabled={isLoadingGitHub}
+                    className="h-8 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
+                  >
+                    <RefreshCw className={`h-3 w-3 mr-1.5 ${isLoadingGitHub ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </Button>
+                )}
 
                 <Button
                   size="sm"
@@ -469,7 +508,7 @@ export default function StrakvuPage() {
                   className="h-8 bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs"
                 >
                   <Github className="h-3.5 w-3.5 mr-1.5" />
-                  <span>Connect Account</span>
+                  <span>{baseProfile.isConnected && baseProfile.username ? 'Change Account' : 'Connect GitHub'}</span>
                 </Button>
               </div>
             </div>
@@ -562,6 +601,7 @@ export default function StrakvuPage() {
                     onPrevMonth={handlePrevMonth}
                     onNextMonth={handleNextMonth}
                     onJumpToday={handleJumpToday}
+                    onSelectMonthYear={handleSelectMonthYear}
                     monthActivities={filteredMonthActivities}
                     selectedDay={selectedDay}
                     onSelectDay={(day) => setSelectedDayDate(day.date)}
@@ -583,6 +623,7 @@ export default function StrakvuPage() {
                   onPrevMonth={handlePrevMonth}
                   onNextMonth={handleNextMonth}
                   onJumpToday={handleJumpToday}
+                  onSelectMonthYear={handleSelectMonthYear}
                   monthActivities={filteredMonthActivities}
                   selectedDay={selectedDay}
                   onSelectDay={(day) => setSelectedDayDate(day.date)}

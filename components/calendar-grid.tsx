@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Bot, Compass, GitCommit, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Bot, Compass, GitCommit, Sparkles, ChevronDown } from 'lucide-react';
 import { DayActivity } from '@/types/activity';
 import { Button } from './ui/button';
 import { cn, MONTH_NAMES } from '@/lib/utils';
@@ -11,6 +11,7 @@ interface CalendarGridProps {
   onPrevMonth: () => void;
   onNextMonth: () => void;
   onJumpToday: () => void;
+  onSelectMonthYear?: (year: number, month: number) => void;
   monthActivities: DayActivity[];
   selectedDay: DayActivity | null;
   onSelectDay: (day: DayActivity) => void;
@@ -23,12 +24,20 @@ export function CalendarGrid({
   onPrevMonth,
   onNextMonth,
   onJumpToday,
+  onSelectMonthYear,
   monthActivities,
   selectedDay,
   onSelectDay,
 }: CalendarGridProps) {
-  const monthName = MONTH_NAMES[currentDate.getMonth()] || 'September';
+  const currentMonthIdx = currentDate.getMonth();
   const year = currentDate.getFullYear();
+  const monthName = MONTH_NAMES[currentMonthIdx] || 'September';
+
+  const [showYearPicker, setShowYearPicker] = useState(false);
+
+  // Years range from 2018 up to current year + 1
+  const thisYear = new Date().getFullYear();
+  const years = Array.from({ length: thisYear - 2018 + 2 }, (_, i) => thisYear + 1 - i);
 
   // Green color mapping matching GitHub contribution tones
   const getDotStyle = (level: number) => {
@@ -54,13 +63,72 @@ export function CalendarGrid({
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#161b22] border border-[#30363d] text-emerald-400">
             <CalendarIcon className="h-4 w-4" />
           </div>
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold font-mono text-white tracking-tight flex items-center gap-2">
-              <span>{monthName} {year}</span>
-            </h2>
+          <div className="relative">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowYearPicker(!showYearPicker)}
+                className="flex items-center gap-1.5 text-lg sm:text-xl font-bold font-mono text-white tracking-tight hover:text-emerald-400 transition-colors group"
+              >
+                <span>{monthName} {year}</span>
+                <ChevronDown className={`h-4 w-4 text-[#8b949e] group-hover:text-emerald-400 transition-transform ${showYearPicker ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
             <p className="text-[11px] text-[#8b949e] font-mono">
-              Click any date to view primary projects, commits & AI prompt records
+              Explore your complete GitHub commits & journey across any date
             </p>
+
+            {/* Quick Month & Year Picker Dropdown */}
+            {showYearPicker && (
+              <div className="absolute top-full left-0 mt-2 z-50 w-72 rounded-xl border border-[#30363d] bg-[#161b22] p-3 shadow-2xl space-y-3">
+                <div>
+                  <label className="text-[10px] font-mono uppercase text-[#8b949e] tracking-wider block mb-1.5">
+                    Select Month
+                  </label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {MONTH_NAMES.map((m, idx) => (
+                      <button
+                        key={m}
+                        onClick={() => {
+                          onSelectMonthYear?.(year, idx);
+                          setShowYearPicker(false);
+                        }}
+                        className={`py-1 text-xs font-mono rounded transition-colors ${
+                          idx === currentMonthIdx
+                            ? 'bg-[#238636] text-white font-semibold'
+                            : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'
+                        }`}
+                      >
+                        {m.slice(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-[#30363d] pt-2">
+                  <label className="text-[10px] font-mono uppercase text-[#8b949e] tracking-wider block mb-1.5">
+                    Select Year
+                  </label>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    {years.map((y) => (
+                      <button
+                        key={y}
+                        onClick={() => {
+                          onSelectMonthYear?.(y, currentMonthIdx);
+                          setShowYearPicker(false);
+                        }}
+                        className={`px-2.5 py-1 text-xs font-mono rounded shrink-0 transition-colors ${
+                          y === year
+                            ? 'bg-[#238636] text-white font-semibold'
+                            : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'
+                        }`}
+                      >
+                        {y}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -113,126 +181,91 @@ export function CalendarGrid({
       <div className="grid grid-cols-7 bg-[#21262d] gap-px">
         {monthActivities.map((day, index) => {
           const isSelected = selectedDay?.date === day.date;
-          const hasActivity = day.totalActivities > 0 || (day.aiSessions && day.aiSessions.length > 0);
-          const aiCount = day.aiSessions?.length || 0;
+          const hasActivity = day.totalActivities > 0;
+          const primaryRepo = day.repos[0]?.split('/')[1] || day.repos[0];
 
           return (
             <button
               key={`${day.date}-${index}`}
               onClick={() => onSelectDay(day)}
-              suppressHydrationWarning
               className={cn(
-                'group relative flex flex-col justify-between text-left transition-all duration-150 p-2 sm:p-2.5 min-h-[78px] sm:min-h-[96px] md:min-h-[104px] focus:outline-none cursor-pointer',
+                'group relative flex flex-col justify-between p-2 sm:p-2.5 min-h-[90px] sm:min-h-[105px] transition-all text-left outline-none',
                 day.isCurrentMonth
                   ? 'bg-[#0d1117] hover:bg-[#161b22]'
-                  : 'bg-[#090d14]/70 text-[#484f58] hover:bg-[#111620]',
-                day.isToday && !isSelected && 'ring-1 ring-inset ring-emerald-500/50',
-                isSelected && 'bg-[#161b22] ring-2 ring-inset ring-[#2ea043] z-10'
+                  : 'bg-[#090d14]/70 text-[#484f58] hover:bg-[#121620]',
+                isSelected && 'ring-2 ring-emerald-500 ring-inset bg-[#161b22] z-10',
+                day.isToday && !isSelected && 'bg-emerald-950/20'
               )}
             >
-              {/* Day Header row */}
+              {/* Day Number Header */}
               <div className="flex items-center justify-between w-full">
                 <span
                   className={cn(
-                    'font-mono text-xs sm:text-sm font-semibold transition-colors',
-                    day.isCurrentMonth ? 'text-[#c9d1d9] group-hover:text-white' : 'text-[#484f58]',
-                    day.isToday && 'text-emerald-400 font-bold',
-                    isSelected && 'text-white'
+                    'font-mono text-xs sm:text-sm transition-colors',
+                    day.isCurrentMonth
+                      ? 'text-[#c9d1d9] group-hover:text-white'
+                      : 'text-[#484f58]',
+                    day.isToday && 'font-bold text-emerald-400',
+                    isSelected && 'font-bold text-white'
                   )}
                 >
                   {day.dayNumber}
                 </span>
 
-                <div className="flex items-center gap-1">
-                  {/* AI prompt indicator badge */}
-                  {aiCount > 0 && day.isCurrentMonth && (
-                    <span
-                      title={`${aiCount} AI prompts used on this day`}
-                      className="hidden sm:inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-mono bg-purple-950/80 border border-purple-800/60 text-purple-300"
-                    >
-                      <Bot className="h-2.5 w-2.5" />
-                      <span>{aiCount}</span>
-                    </span>
-                  )}
-
-                  {day.isToday && (
-                    <span className="text-[9px] font-mono uppercase tracking-wider px-1 py-0.2 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
-                      today
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Focus Repo Title on Desktop */}
-              {day.primaryFocusRepo && day.isCurrentMonth && (
-                <div className="hidden sm:block mt-1">
-                  <p className="text-[10px] font-mono text-[#8b949e] group-hover:text-white truncate">
-                    {day.primaryFocusRepo.split('/')[1] || day.primaryFocusRepo}
-                  </p>
-                </div>
-              )}
-
-              {/* Activity indicator: The Green Dot + Count */}
-              <div className="mt-auto pt-2 flex items-end justify-between w-full">
-                {hasActivity ? (
-                  <div className="flex items-center gap-1.5">
-                    {/* The Green Dot */}
+                {/* Level / Intensity Indicator */}
+                {hasActivity && (
+                  <div className="flex items-center gap-1">
                     <span
                       className={cn(
-                        'h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full shrink-0 transition-transform group-hover:scale-125',
+                        'h-2.5 w-2.5 rounded-sm transition-transform group-hover:scale-110',
                         getDotStyle(day.level)
                       )}
+                      title={`${day.totalCommits} commits, ${day.totalActivities} total events`}
                     />
-                    
-                    {/* Count text */}
-                    <span className="hidden md:inline-block text-[10px] font-mono text-[#8b949e] group-hover:text-emerald-300">
-                      {day.totalActivities} {day.totalActivities === 1 ? 'evt' : 'evts'}
-                    </span>
                   </div>
-                ) : (
-                  <span className="h-2 w-2 rounded-full bg-transparent" />
-                )}
-
-                {/* Sub repo indicator on desktop */}
-                {hasActivity && day.repos.length > 1 && (
-                  <span className="hidden lg:inline-block text-[9px] font-mono text-emerald-400/80">
-                    +{day.repos.length - 1} more
-                  </span>
                 )}
               </div>
 
-              {/* Active selection corner badge */}
-              {isSelected && (
+              {/* Day Content Summary (Primary Project & Commit/AI Indicators) */}
+              <div className="mt-auto space-y-1 w-full overflow-hidden">
+                {hasActivity ? (
+                  <>
+                    {/* Primary repo badge */}
+                    {primaryRepo && (
+                      <div className="truncate rounded px-1.5 py-0.5 text-[10px] font-mono font-medium bg-[#21262d] text-emerald-300 group-hover:bg-[#30363d] transition-colors">
+                        {primaryRepo}
+                      </div>
+                    )}
+
+                    {/* Commit & AI badge indicators */}
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#8b949e]">
+                      {day.totalCommits > 0 && (
+                        <span className="flex items-center gap-0.5 text-sky-400">
+                          <GitCommit className="h-3 w-3" />
+                          <span>{day.totalCommits}</span>
+                        </span>
+                      )}
+
+                      {day.aiSessions && day.aiSessions.length > 0 && (
+                        <span className="flex items-center gap-0.5 text-purple-400">
+                          <Bot className="h-3 w-3" />
+                          <span>{day.aiSessions.length}</span>
+                        </span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-4" />
+                )}
+              </div>
+
+              {/* Highlight today pill */}
+              {day.isToday && (
                 <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
               )}
             </button>
           );
         })}
-      </div>
-
-      {/* Calendar Footer / Legend */}
-      <div className="flex flex-col sm:flex-row items-center justify-between p-3.5 sm:p-4 bg-[#161b22]/50 border-t border-[#21262d] text-xs font-mono text-[#8b949e] gap-2">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#39d353]" />
-            <span className="text-[#c9d1d9]">GitHub Code</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-purple-400" />
-            <span className="text-purple-300">Claude / ChatGPT / Gemini</span>
-          </div>
-        </div>
-
-        {/* GitHub Green Legend */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[#6e7681]">Less</span>
-          <span className="h-2.5 w-2.5 rounded-sm bg-[#161b22] border border-[#30363d]" title="No activity" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#0e4429] border border-[#238636]/60" title="1-2 activities" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#006d32] border border-[#26a641]" title="3-4 activities" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#26a641] border border-[#39d353]" title="5-6 activities" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" title="7+ activities" />
-          <span className="text-[11px] text-[#6e7681]">More</span>
-        </div>
       </div>
     </div>
   );

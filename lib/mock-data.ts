@@ -1,22 +1,20 @@
 import { ActivityEvent, DayActivity, DeveloperProfile, AIChatSession, ChromeResearchItem } from '@/types/activity';
 
 export const INITIAL_DEVELOPER: DeveloperProfile = {
-  username: 'sanjayanand',
-  displayName: 'Sanjay Anand',
-  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  bio: 'Building Strakvu — Developer Activity Calendar',
-  isConnected: true,
+  username: '',
+  displayName: 'Developer',
+  avatarUrl: '',
+  bio: 'Connect GitHub to visualize your live commits and activity.',
+  isConnected: false,
   currentStreak: 0,
   longestStreak: 0,
   totalCommitsMonth: 0,
   activeReposCount: 0,
-  topRepo: 'sanjayanand/strakvu',
+  topRepo: '',
   totalAiAssistedPrompts: 0,
 };
 
-export const POPULAR_REPOS: string[] = [
-  'sanjayanand/strakvu',
-];
+export const POPULAR_REPOS: string[] = [];
 
 // Generates an empty, pristine calendar month (zero dummy data)
 export function getCleanMonthActivities(year: number, month: number, referenceDateStr?: string): DayActivity[] {

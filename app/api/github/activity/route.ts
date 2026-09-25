@@ -2,29 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { Octokit } from 'octokit';
-import { ActivityEvent, CommitDetail, DayActivity, DeveloperProfile } from '@/types/activity';
+import { ActivityEvent, CommitDetail, DeveloperProfile } from '@/types/activity';
 
 export const dynamic = 'force-dynamic';
 
-// 5-minute in-memory cache to prevent hitting GitHub's 60 req/hr rate limits
+// 2-minute in-memory cache to prevent hitting GitHub rate limits while staying fresh
 interface CacheEntry {
   timestamp: number;
   data: any;
 }
 const activityCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 2 * 60 * 1000;
 
 function synthesizeDayStory(events: ActivityEvent[], dateStr: string): string {
   if (!events || events.length === 0) return '';
 
   const repos = Array.from(new Set(events.map((e) => e.repo.split('/')[1] || e.repo)));
   const allCommitMessages: string[] = [];
-  let prCount = 0;
-  let pushCount = 0;
 
   for (const evt of events) {
-    if (evt.type === 'pull_request') prCount++;
-    if (evt.type === 'push') pushCount++;
     if (evt.commits && evt.commits.length > 0) {
       for (const c of evt.commits) {
         if (c.message) {
@@ -35,16 +31,17 @@ function synthesizeDayStory(events: ActivityEvent[], dateStr: string): string {
         }
       }
     } else if (evt.title) {
-      allCommitMessages.push(evt.title);
+      const firstLine = evt.title.split('\n')[0].trim();
+      if (firstLine && !allCommitMessages.includes(firstLine)) {
+        allCommitMessages.push(firstLine);
+      }
     }
   }
 
   const repoNames = repos.slice(0, 3).map((r) => `\`${r}\``).join(', ');
   const repoSuffix = repos.length > 3 ? ` and ${repos.length - 3} other repos` : '';
 
-  // Extract clean bullet-points or thematic summary
   const highlights = allCommitMessages.slice(0, 4).map((msg) => {
-    // Clean conventional commit prefixes
     return msg
       .replace(/^(feat|fix|chore|refactor|docs|style|test|build|perf|ci)(\([^)]+\))?:\s*/i, '')
       .replace(/^[a-z]/, (char) => char.toUpperCase());
@@ -72,12 +69,35 @@ export async function GET(req: NextRequest) {
     // @ts-expect-error username stored on session user
     const sessionUsername: string | undefined = session?.user?.username || session?.user?.name;
 
-    const token = queryToken || sessionToken || process.env.GITHUB_TOKEN;
-    const targetUsername = queryUsername || sessionUsername || (token ? undefined : 'sanjayanand');
+    const token = queryToken || sessionToken;
+    const targetUsername = queryUsername || sessionUsername;
 
-    const cacheKey = `${token ? 'token:' + token.slice(-8) : 'user:' + (targetUsername || 'default')}`;
+    if (!token && !targetUsername) {
+      return NextResponse.json({
+        success: true,
+        profile: {
+          username: '',
+          displayName: 'Developer',
+          avatarUrl: '',
+          bio: 'Connect GitHub to view your live activity calendar',
+          isConnected: false,
+          currentStreak: 0,
+          longestStreak: 0,
+          totalCommitsMonth: 0,
+          activeReposCount: 0,
+          topRepo: '',
+        },
+        eventsByDate: {},
+        storiesByDate: {},
+        totalEvents: 0,
+        totalCommits: 0,
+        repositories: [],
+      });
+    }
 
-    // Check cache unless explicitly requested to bypass
+    const cacheKey = `${token ? 'token:' + token.slice(-8) : 'user:' + targetUsername}`;
+
+    // Check cache unless explicitly forced
     if (!forceRefresh) {
       const cached = activityCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -94,6 +114,7 @@ export async function GET(req: NextRequest) {
       try {
         const { data: authUser } = await octokit.rest.users.getAuthenticated();
         usernameToQuery = authUser.login;
+        const totalReposCount = (authUser.public_repos || 0) + (authUser.total_private_repos || 0);
         userProfile = {
           username: authUser.login,
           displayName: authUser.name || authUser.login,
@@ -103,7 +124,7 @@ export async function GET(req: NextRequest) {
           currentStreak: 0,
           longestStreak: 0,
           totalCommitsMonth: 0,
-          activeReposCount: 0,
+          activeReposCount: totalReposCount,
           topRepo: '',
         };
       } catch (err: any) {
@@ -133,20 +154,19 @@ export async function GET(req: NextRequest) {
           currentStreak: 0,
           longestStreak: 0,
           totalCommitsMonth: 0,
-          activeReposCount: 0,
+          activeReposCount: publicUser.public_repos || 0,
           topRepo: '',
         };
       } catch (err: any) {
         const isRateLimit = err?.status === 403 || (err?.message && err.message.toLowerCase().includes('rate limit'));
         if (isRateLimit) {
-          // If unauthenticated rate limit hit, check if we have any stale cache
           const stale = activityCache.get(cacheKey);
           if (stale) {
             return NextResponse.json({ ...stale.data, fromCache: true, rateLimited: true });
           }
           return NextResponse.json(
             {
-              error: 'GitHub API unauthenticated IP quota reached. Please click "Connect GitHub" for 5,000 free requests/hr.',
+              error: 'GitHub API unauthenticated rate limit reached. Click "Connect GitHub" for unlimited 5,000 requests/hr.',
               isRateLimit: true,
             },
             { status: 429 }
@@ -169,14 +189,78 @@ export async function GET(req: NextRequest) {
     const eventsByDate: Record<string, ActivityEvent[]> = {};
     const repoFrequency: Record<string, number> = {};
     const allUserRepos: string[] = [];
-    let totalCommitsAcrossPeriod = 0;
+    const seenCommitShas = new Set<string>();
 
-    // 2. Fetch User's Repositories (up to 100)
+    // Helper to record a single commit cleanly
+    const addCommitToDate = (
+      commitDateStr: string,
+      fullSha: string,
+      message: string,
+      fullRepo: string,
+      branchName: string = 'main',
+      timestampStr?: string
+    ) => {
+      const shortSha = fullSha.substring(0, 7);
+      if (seenCommitShas.has(fullSha) || seenCommitShas.has(shortSha)) {
+        return;
+      }
+      seenCommitShas.add(fullSha);
+      seenCommitShas.add(shortSha);
+
+      if (!allUserRepos.includes(fullRepo)) {
+        allUserRepos.push(fullRepo);
+      }
+      repoFrequency[fullRepo] = (repoFrequency[fullRepo] || 0) + 1;
+
+      const cDate = timestampStr ? new Date(timestampStr) : new Date(commitDateStr + 'T12:00:00Z');
+      const hours = cDate.getHours();
+      const minutes = String(cDate.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHour = hours % 12 === 0 ? 12 : hours % 12;
+      const timeStr = `${displayHour}:${minutes} ${ampm}`;
+
+      const firstLine = message.split('\n')[0] || 'Code commit';
+      const desc = message.split('\n').slice(1).join('\n').trim() || undefined;
+
+      const commitDetail: CommitDetail = {
+        id: `cmt-${fullSha}`,
+        hash: shortSha,
+        message: firstLine,
+        repo: fullRepo,
+        repoUrl: `https://github.com/${fullRepo}`,
+        branch: branchName,
+        time: timeStr,
+        timestamp: timestampStr || cDate.toISOString(),
+        additions: 0,
+        deletions: 0,
+      };
+
+      const commitEvt: ActivityEvent = {
+        id: `cmt-evt-${fullSha}`,
+        type: 'commit',
+        title: firstLine,
+        description: desc,
+        repo: fullRepo,
+        repoUrl: `https://github.com/${fullRepo}`,
+        branch: branchName,
+        time: timeStr,
+        timestamp: timestampStr || cDate.toISOString(),
+        hash: shortSha,
+        commits: [commitDetail],
+      };
+
+      if (!eventsByDate[commitDateStr]) {
+        eventsByDate[commitDateStr] = [];
+      }
+      eventsByDate[commitDateStr].push(commitEvt);
+    };
+
+    // 2. Fetch User's Repositories (sorted by pushed to get recently active repos first)
+    let reposData: any[] = [];
     try {
-      let reposData: any[] = [];
       if (token) {
         const res = await octokit.rest.repos.listForAuthenticatedUser({
-          sort: 'updated',
+          sort: 'pushed',
           per_page: 100,
           visibility: 'all',
         });
@@ -184,7 +268,7 @@ export async function GET(req: NextRequest) {
       } else if (usernameToQuery) {
         const res = await octokit.rest.repos.listForUser({
           username: usernameToQuery,
-          sort: 'updated',
+          sort: 'pushed',
           per_page: 100,
           type: 'all',
         });
@@ -193,14 +277,91 @@ export async function GET(req: NextRequest) {
 
       for (const repo of reposData) {
         allUserRepos.push(repo.full_name);
-        repoFrequency[repo.full_name] = repo.stargazers_count || 1;
+        repoFrequency[repo.full_name] = (repoFrequency[repo.full_name] || 0) + 1;
       }
     } catch {
-      // Non-critical, continue with events
+      // Non-critical, continue
     }
 
-    // 3. Fetch Events from GitHub Events API (up to 300 events / 90 days)
-    const rawEvents: any[] = [];
+    // 3. Search Commits API — Fetches user commits across their entire GitHub journey across all history
+    try {
+      for (let searchPage = 1; searchPage <= 3; searchPage++) {
+        const searchRes = await octokit.rest.search.commits({
+          q: `author:${usernameToQuery}`,
+          sort: 'author-date',
+          order: 'desc',
+          per_page: 100,
+          page: searchPage,
+        });
+
+        if (!searchRes.data.items || searchRes.data.items.length === 0) break;
+
+        for (const item of searchRes.data.items) {
+          const dateRaw = item.commit?.author?.date || item.commit?.committer?.date;
+          if (!dateRaw) continue;
+
+          const cDate = new Date(dateRaw);
+          const y = cDate.getFullYear();
+          const m = String(cDate.getMonth() + 1).padStart(2, '0');
+          const d = String(cDate.getDate()).padStart(2, '0');
+          const ds = `${y}-${m}-${d}`;
+
+          const repoFullName = item.repository?.full_name || 'repository';
+          addCommitToDate(
+            ds,
+            item.sha,
+            item.commit?.message || 'Updated code',
+            repoFullName,
+            'main',
+            dateRaw
+          );
+        }
+
+        if (searchRes.data.items.length < 100) break;
+      }
+    } catch {
+      // Fallback to direct repo commit scanning if search.commits is restricted
+    }
+
+    // 4. Direct Commit Fetch from all active repositories (scans recent 25 repositories)
+    const reposToDeepScan = reposData.slice(0, 25);
+    for (const repoObj of reposToDeepScan) {
+      const fullRepo = repoObj.full_name;
+      const [owner, repo] = fullRepo.split('/');
+      if (!owner || !repo) continue;
+
+      try {
+        const { data: repoCommits } = await octokit.rest.repos.listCommits({
+          owner,
+          repo,
+          per_page: 100,
+        });
+
+        for (const c of repoCommits) {
+          const commitDate = c.commit?.author?.date || c.commit?.committer?.date;
+          if (!commitDate) continue;
+
+          const cDate = new Date(commitDate);
+          const y = cDate.getFullYear();
+          const m = String(cDate.getMonth() + 1).padStart(2, '0');
+          const d = String(cDate.getDate()).padStart(2, '0');
+          const ds = `${y}-${m}-${d}`;
+
+          addCommitToDate(
+            ds,
+            c.sha,
+            c.commit?.message || 'Updated files',
+            fullRepo,
+            'main',
+            commitDate
+          );
+        }
+      } catch {
+        // Skip individual repo error
+      }
+    }
+
+    // 5. Fetch GitHub Events (Pushes, PRs, Repo Creations, Releases)
     for (let page = 1; page <= 3; page++) {
       try {
         let res: any;
@@ -219,197 +380,73 @@ export async function GET(req: NextRequest) {
         }
 
         if (!res.data || res.data.length === 0) break;
-        rawEvents.push(...res.data);
-        if (res.data.length < 100) break;
+
+        for (const e of res.data) {
+          const createdAt = new Date(e.created_at);
+          const y = createdAt.getFullYear();
+          const m = String(createdAt.getMonth() + 1).padStart(2, '0');
+          const d = String(createdAt.getDate()).padStart(2, '0');
+          const dateStr = `${y}-${m}-${d}`;
+
+          const hours = createdAt.getHours();
+          const minutes = String(createdAt.getMinutes()).padStart(2, '0');
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const displayHour = hours % 12 === 0 ? 12 : hours % 12;
+          const timeStr = `${displayHour}:${minutes} ${ampm}`;
+
+          const repoName = e.repo?.name || 'repository';
+          if (!allUserRepos.includes(repoName)) {
+            allUserRepos.push(repoName);
+          }
+
+          if (e.type === 'PushEvent') {
+            const rawCommits: any[] = Array.isArray(e.payload?.commits) ? e.payload.commits : [];
+            for (const c of rawCommits) {
+              const sha = c.sha || `${e.id}`;
+              addCommitToDate(dateStr, sha, c.message || 'Pushed commit', repoName, 'main', e.created_at);
+            }
+          } else if (e.type === 'PullRequestEvent') {
+            const action = e.payload?.action || 'opened';
+            const pr = e.payload?.pull_request;
+            const isMerged = Boolean(pr?.merged);
+
+            const prEvt: ActivityEvent = {
+              id: `pr-${e.id}`,
+              type: 'pull_request',
+              title: `${isMerged ? 'Merged PR' : action === 'opened' ? 'Opened PR' : 'Updated PR'} #${e.payload?.number || ''}: ${pr?.title || repoName}`,
+              description: pr?.body ? pr.body.slice(0, 160) : undefined,
+              repo: repoName,
+              repoUrl: `https://github.com/${repoName}`,
+              branch: pr?.head?.ref || 'feature',
+              time: timeStr,
+              timestamp: e.created_at,
+            };
+
+            if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
+            eventsByDate[dateStr].push(prEvt);
+          } else if (e.type === 'CreateEvent' && e.payload?.ref_type === 'repository') {
+            const createEvt: ActivityEvent = {
+              id: `create-${e.id}`,
+              type: 'repo_created',
+              title: `Created repository ${repoName}`,
+              description: e.payload?.description || undefined,
+              repo: repoName,
+              repoUrl: `https://github.com/${repoName}`,
+              branch: 'main',
+              time: timeStr,
+              timestamp: e.created_at,
+            };
+
+            if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
+            eventsByDate[dateStr].push(createEvt);
+          }
+        }
       } catch {
         break;
       }
     }
 
-    // Process GitHub events
-    const allowedTypes = ['PushEvent', 'CreateEvent', 'PullRequestEvent', 'ReleaseEvent'];
-    const filteredRaw = rawEvents.filter((e) => allowedTypes.includes(e.type));
-
-    for (const e of filteredRaw) {
-      const createdAt = new Date(e.created_at);
-      const year = createdAt.getFullYear();
-      const month = String(createdAt.getMonth() + 1).padStart(2, '0');
-      const day = String(createdAt.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-
-      const hours = createdAt.getHours();
-      const minutes = String(createdAt.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHour = hours % 12 === 0 ? 12 : hours % 12;
-      const timeStr = `${displayHour}:${minutes} ${ampm}`;
-
-      const repoName = e.repo?.name || 'repository';
-      if (!allUserRepos.includes(repoName)) {
-        allUserRepos.push(repoName);
-      }
-      repoFrequency[repoName] = (repoFrequency[repoName] || 0) + 1;
-
-      let eventType: ActivityEvent['type'] = 'commit';
-      let title = '';
-      let description: string | undefined = undefined;
-      let branch = 'main';
-      let commits: CommitDetail[] | undefined = undefined;
-      let realHash = (e.payload?.head || e.id || '').substring(0, 7);
-
-      if (e.type === 'PushEvent') {
-        eventType = 'push';
-        branch = e.payload?.ref ? e.payload.ref.replace('refs/heads/', '') : 'main';
-        const rawCommits: any[] = Array.isArray(e.payload?.commits) ? e.payload.commits : [];
-
-        if (rawCommits.length > 0) {
-          totalCommitsAcrossPeriod += rawCommits.length;
-          commits = rawCommits.map((c, cIdx) => {
-            const sha = c.sha || `${e.id}${cIdx}`;
-            const shortSha = sha.substring(0, 7);
-            return {
-              id: `cmt-${sha}`,
-              hash: shortSha,
-              message: c.message || 'Updated repository files',
-              repo: repoName,
-              repoUrl: `https://github.com/${repoName}`,
-              branch,
-              time: timeStr,
-              timestamp: e.created_at,
-              additions: 0,
-              deletions: 0,
-            };
-          });
-          realHash = commits[0]?.hash || realHash;
-          title =
-            rawCommits.length === 1
-              ? rawCommits[0].message || `Pushed 1 commit to ${branch}`
-              : `Pushed ${rawCommits.length} commits to ${branch}`;
-        } else {
-          totalCommitsAcrossPeriod += 1;
-          title = `Pushed updates to ${branch}`;
-        }
-      } else if (e.type === 'CreateEvent') {
-        const refType = e.payload?.ref_type || 'repository';
-        branch = e.payload?.master_branch || 'main';
-
-        if (refType === 'repository') {
-          eventType = 'repo_created';
-          title = `Created repository ${repoName}`;
-          description = e.payload?.description || undefined;
-        } else {
-          eventType = 'push';
-          title = `Created ${refType} ${e.payload?.ref || ''} in ${repoName}`;
-        }
-      } else if (e.type === 'PullRequestEvent') {
-        eventType = 'pull_request';
-        const action = e.payload?.action || 'opened';
-        const pr = e.payload?.pull_request;
-        const isMerged = Boolean(pr?.merged);
-
-        title = `${isMerged ? 'Merged PR' : action === 'opened' ? 'Opened PR' : 'Updated PR'} #${e.payload?.number || ''}: ${pr?.title || repoName}`;
-        description = pr?.body ? pr.body.slice(0, 160) : undefined;
-        branch = pr?.head?.ref || 'feature';
-      }
-
-      const activityEvent: ActivityEvent = {
-        id: `evt-${e.id}`,
-        type: eventType,
-        title,
-        description,
-        repo: repoName,
-        repoUrl: `https://github.com/${repoName}`,
-        branch,
-        time: timeStr,
-        timestamp: e.created_at,
-        commits,
-        hash: realHash,
-      };
-
-      if (!eventsByDate[dateStr]) {
-        eventsByDate[dateStr] = [];
-      }
-      eventsByDate[dateStr].push(activityEvent);
-    }
-
-    // 4. Also fetch deeper commit history for top 3 repositories if user has fewer than 15 days of activity
-    const distinctActiveDays = Object.keys(eventsByDate).length;
-    if (distinctActiveDays < 15 && allUserRepos.length > 0) {
-      const topReposToScan = allUserRepos.slice(0, 3);
-      for (const fullRepo of topReposToScan) {
-        const [owner, repo] = fullRepo.split('/');
-        if (!owner || !repo) continue;
-
-        try {
-          const { data: repoCommits } = await octokit.rest.repos.listCommits({
-            owner,
-            repo,
-            per_page: 30,
-          });
-
-          for (const c of repoCommits) {
-            const commitDate = c.commit?.author?.date || c.commit?.committer?.date;
-            if (!commitDate) continue;
-
-            const cDate = new Date(commitDate);
-            const y = cDate.getFullYear();
-            const m = String(cDate.getMonth() + 1).padStart(2, '0');
-            const d = String(cDate.getDate()).padStart(2, '0');
-            const ds = `${y}-${m}-${d}`;
-
-            const hours = cDate.getHours();
-            const minutes = String(cDate.getMinutes()).padStart(2, '0');
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            const displayHour = hours % 12 === 0 ? 12 : hours % 12;
-            const timeStr = `${displayHour}:${minutes} ${ampm}`;
-
-            const fullSha = c.sha || 'unknown';
-            const shortSha = fullSha.substring(0, 7);
-
-            // Avoid duplicating if already present in events
-            if (eventsByDate[ds]?.some((ev) => ev.hash === shortSha || ev.commits?.some((sc) => sc.hash === shortSha))) {
-              continue;
-            }
-
-            const commitEvt: ActivityEvent = {
-              id: `repo-cmt-${fullSha}`,
-              type: 'commit',
-              title: c.commit?.message?.split('\n')[0] || 'Code commit',
-              description: c.commit?.message?.split('\n').slice(1).join('\n').trim() || undefined,
-              repo: fullRepo,
-              repoUrl: `https://github.com/${fullRepo}`,
-              branch: 'main',
-              time: timeStr,
-              timestamp: commitDate,
-              hash: shortSha,
-              commits: [
-                {
-                  id: `cmt-${fullSha}`,
-                  hash: shortSha,
-                  message: c.commit?.message || 'Updated files',
-                  repo: fullRepo,
-                  repoUrl: `https://github.com/${fullRepo}`,
-                  branch: 'main',
-                  time: timeStr,
-                  timestamp: commitDate,
-                  additions: 0,
-                  deletions: 0,
-                },
-              ],
-            };
-
-            if (!eventsByDate[ds]) {
-              eventsByDate[ds] = [];
-            }
-            eventsByDate[ds].push(commitEvt);
-            totalCommitsAcrossPeriod++;
-          }
-        } catch {
-          // Ignore individual repo errors
-        }
-      }
-    }
-
-    // 5. Generate human story summary for each active date
+    // 6. Generate human story summary for each active date
     const storiesByDate: Record<string, string> = {};
     for (const [dateStr, dayEvents] of Object.entries(eventsByDate)) {
       storiesByDate[dateStr] = synthesizeDayStory(dayEvents, dateStr);
@@ -466,11 +503,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    userProfile.topRepo = topRepo || userProfile.topRepo || (allUserRepos[0] || 'sanjayanand/strakvu');
+    // Total commits counted
+    const totalCommitsCount = Object.values(eventsByDate).reduce((sum, dayEvts) => {
+      return (
+        sum +
+        dayEvts.reduce((dSum, e) => {
+          return dSum + (e.commits && e.commits.length > 0 ? e.commits.length : e.type === 'commit' ? 1 : 0);
+        }, 0)
+      );
+    }, 0);
+
+    userProfile.topRepo = topRepo || userProfile.topRepo || (allUserRepos[0] || '');
     userProfile.currentStreak = currentStreak;
     userProfile.longestStreak = Math.max(longestStreak, currentStreak);
-    userProfile.totalCommitsMonth = totalCommitsAcrossPeriod;
-    userProfile.activeReposCount = allUserRepos.length || Object.keys(repoFrequency).length;
+    userProfile.totalCommitsMonth = totalCommitsCount;
+    userProfile.activeReposCount = userProfile.activeReposCount || allUserRepos.length || 0;
 
     const responsePayload = {
       success: true,
@@ -478,11 +525,11 @@ export async function GET(req: NextRequest) {
       eventsByDate,
       storiesByDate,
       totalEvents: Object.values(eventsByDate).reduce((sum, evs) => sum + evs.length, 0),
-      totalCommits: totalCommitsAcrossPeriod,
+      totalCommits: totalCommitsCount,
       repositories: allUserRepos,
     };
 
-    // Cache the successful payload
+    // Cache the payload
     activityCache.set(cacheKey, {
       timestamp: Date.now(),
       data: responsePayload,

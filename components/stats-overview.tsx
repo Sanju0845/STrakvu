@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Flame, GitCommit, FolderGit2, Bot, Sparkles, Compass } from 'lucide-react';
+import { Flame, GitCommit, FolderGit2, Layers } from 'lucide-react';
 import { DeveloperProfile, DayActivity } from '@/types/activity';
 
 interface StatsOverviewProps {
@@ -15,27 +15,32 @@ export function StatsOverview({
   monthActivities,
   selectedMonthName,
 }: StatsOverviewProps) {
-  // Compute monthly stats dynamically
-  const activeDaysCount = monthActivities.filter((d) => d.isCurrentMonth && d.totalActivities > 0).length;
-  const totalCommits = monthActivities
-    .filter((d) => d.isCurrentMonth)
-    .reduce((sum, d) => sum + d.totalCommits, 0);
+  const isConnected = profile.isConnected && Boolean(profile.username);
 
-  const totalPrompts = monthActivities
-    .filter((d) => d.isCurrentMonth)
-    .reduce((sum, d) => sum + (d.aiSessions?.length || 0), 0);
+  // Compute monthly stats dynamically from the actual calendar days
+  const activeDaysCount = isConnected
+    ? monthActivities.filter((d) => d.isCurrentMonth && d.totalActivities > 0).length
+    : 0;
+
+  const monthlyCommits = isConnected
+    ? monthActivities
+        .filter((d) => d.isCurrentMonth)
+        .reduce((sum, d) => sum + d.totalCommits, 0)
+    : 0;
 
   // Determine top project of the month by commit density
   const repoCounts: Record<string, number> = {};
-  for (const day of monthActivities) {
-    if (day.isCurrentMonth) {
-      for (const repo of day.repos) {
-        repoCounts[repo] = (repoCounts[repo] || 0) + 1;
+  if (isConnected) {
+    for (const day of monthActivities) {
+      if (day.isCurrentMonth) {
+        for (const repo of day.repos) {
+          repoCounts[repo] = (repoCounts[repo] || 0) + 1;
+        }
       }
     }
   }
 
-  let topProject = profile.topRepo;
+  let topProject = isConnected ? (profile.topRepo || 'No pushes yet') : 'Not Connected';
   let topCount = 0;
   for (const [r, count] of Object.entries(repoCounts)) {
     if (count > topCount) {
@@ -44,20 +49,27 @@ export function StatsOverview({
     }
   }
 
+  const cleanTopRepo = topProject.includes('/') ? topProject.split('/')[1] : topProject;
+  const totalRepos = isConnected ? (profile.activeReposCount || Object.keys(repoCounts).length || 0) : 0;
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
       {/* Primary Project Worked On */}
       <div className="rounded-xl border border-[#30363d] bg-[#0d1117] p-3.5 sm:p-4 relative overflow-hidden">
         <div className="flex items-center justify-between text-[#8b949e]">
-          <span className="text-xs font-mono">Major Project</span>
+          <span className="text-xs font-mono">Top Project</span>
           <FolderGit2 className="h-4 w-4 text-emerald-400" />
         </div>
         <div className="mt-2">
           <p className="text-base sm:text-lg font-bold font-mono text-white truncate" title={topProject}>
-            {topCount > 0 ? (topProject.split('/')[1] || topProject) : 'Ready for Push'}
+            {cleanTopRepo}
           </p>
-          <p className="text-[11px] text-emerald-400 font-mono mt-0.5">
-            {topCount > 0 ? `Active in ${topCount} development days` : 'No pushes recorded yet'}
+          <p className="text-[11px] text-emerald-400 font-mono mt-0.5 truncate">
+            {isConnected && topCount > 0
+              ? `${topCount} active days in ${selectedMonthName}`
+              : isConnected
+              ? 'Ready for push'
+              : 'Connect GitHub'}
           </p>
         </div>
       </div>
@@ -65,34 +77,38 @@ export function StatsOverview({
       {/* Monthly Code Output */}
       <div className="rounded-xl border border-[#30363d] bg-[#0d1117] p-3.5 sm:p-4 relative overflow-hidden">
         <div className="flex items-center justify-between text-[#8b949e]">
-          <span className="text-xs font-mono">Code Output</span>
+          <span className="text-xs font-mono">Month Commits</span>
           <GitCommit className="h-4 w-4 text-sky-400" />
         </div>
         <div className="mt-2 flex items-baseline gap-1.5">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">
-            {totalCommits}
+            {monthlyCommits}
           </span>
           <span className="text-xs font-mono text-sky-400">commits</span>
         </div>
-        <p className="mt-1 text-[11px] text-[#8b949e] font-mono">
-          {activeDaysCount > 0 ? `Across ${activeDaysCount} active days in ${selectedMonthName}` : `Clean slate in ${selectedMonthName}`}
+        <p className="mt-1 text-[11px] text-[#8b949e] font-mono truncate">
+          {isConnected && activeDaysCount > 0
+            ? `Across ${activeDaysCount} active days in ${selectedMonthName}`
+            : isConnected
+            ? `0 commits in ${selectedMonthName}`
+            : 'Connect GitHub to sync'}
         </p>
       </div>
 
-      {/* AI Pair Sessions (Claude/ChatGPT/Gemini/Cursor) */}
+      {/* Total Repositories Count */}
       <div className="rounded-xl border border-[#30363d] bg-[#0d1117] p-3.5 sm:p-4 relative overflow-hidden">
         <div className="flex items-center justify-between text-[#8b949e]">
-          <span className="text-xs font-mono">AI Brainstorming</span>
-          <Bot className="h-4 w-4 text-purple-400" />
+          <span className="text-xs font-mono">GitHub Repos</span>
+          <Layers className="h-4 w-4 text-purple-400" />
         </div>
         <div className="mt-2 flex items-baseline gap-1.5">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">
-            {totalPrompts}
+            {totalRepos}
           </span>
-          <span className="text-xs font-mono text-purple-400">prompts</span>
+          <span className="text-xs font-mono text-purple-400">repositories</span>
         </div>
         <p className="mt-1 text-[11px] text-[#8b949e] font-mono truncate">
-          Claude, ChatGPT & Cursor
+          {isConnected ? 'Public & Private repos' : '0 repos connected'}
         </p>
       </div>
 
@@ -104,12 +120,16 @@ export function StatsOverview({
         </div>
         <div className="mt-2 flex items-baseline gap-1.5">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">
-            {profile.currentStreak}
+            {isConnected ? profile.currentStreak : 0}
           </span>
           <span className="text-xs font-mono text-amber-400">days streak</span>
         </div>
-        <p className="mt-1 text-[11px] text-[#8b949e] font-mono">
-          {profile.longestStreak > 0 ? `Longest: ${profile.longestStreak} days` : 'Ready to start streak'}
+        <p className="mt-1 text-[11px] text-[#8b949e] font-mono truncate">
+          {isConnected && profile.longestStreak > 0
+            ? `Longest: ${profile.longestStreak} days`
+            : isConnected
+            ? 'Start your streak today'
+            : 'Not Connected'}
         </p>
       </div>
     </div>
