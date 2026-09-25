@@ -1,0 +1,6 @@
+{
+  "name": "Strakvu",
+  "description": "Developer activity calendar that connects to GitHub and visualizes daily commits, pushes, pull requests, and repository milestones in a clean timeline view.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
