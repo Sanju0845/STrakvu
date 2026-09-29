@@ -7,10 +7,8 @@ import {
   Calendar as CalendarIcon,
   Bot,
   GitCommit,
-  Sparkles,
   ChevronDown,
   Clock,
-  Laptop,
 } from 'lucide-react';
 import { DayActivity } from '@/types/activity';
 import { Button } from './ui/button';
@@ -68,28 +66,28 @@ export function CalendarGrid({
   return (
     <div className="rounded-xl border border-[#30363d] bg-[#0d1117] shadow-xl overflow-hidden">
       {/* Calendar Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#21262d] p-4 sm:p-5 gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#161b22] border border-[#30363d] text-emerald-400">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#21262d] p-3 sm:p-5 gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-[#161b22] border border-[#30363d] text-emerald-400 shrink-0">
             <CalendarIcon className="h-4 w-4" />
           </div>
           <div className="relative">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowYearPicker(!showYearPicker)}
-                className="flex items-center gap-1.5 text-lg sm:text-xl font-bold font-mono text-white tracking-tight hover:text-emerald-400 transition-colors group"
+                className="flex items-center gap-1.5 text-base sm:text-xl font-bold font-mono text-white tracking-tight hover:text-emerald-400 transition-colors group"
               >
                 <span>{monthName} {year}</span>
-                <ChevronDown className={`h-4 w-4 text-[#8b949e] group-hover:text-emerald-400 transition-transform ${showYearPicker ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#8b949e] group-hover:text-emerald-400 transition-transform ${showYearPicker ? 'rotate-180' : ''}`} />
               </button>
             </div>
-            <p className="text-[11px] text-[#8b949e] font-mono">
-              Click any day to inspect exact coding time, commits & IDE history on the right
+            <p className="text-[10px] sm:text-[11px] text-[#8b949e] font-mono leading-tight">
+              Tap any day to inspect exact coding time & commits
             </p>
 
             {/* Quick Month & Year Picker Dropdown */}
             {showYearPicker && (
-              <div className="absolute top-full left-0 mt-2 z-50 w-72 rounded-xl border border-[#30363d] bg-[#161b22] p-3 shadow-2xl space-y-3">
+              <div className="absolute top-full left-0 mt-2 z-50 w-64 sm:w-72 rounded-xl border border-[#30363d] bg-[#161b22] p-3 shadow-2xl space-y-3">
                 <div>
                   <label className="text-[10px] font-mono uppercase text-[#8b949e] tracking-wider block mb-1.5">
                     Select Month
@@ -148,7 +146,7 @@ export function CalendarGrid({
             onClick={onJumpToday}
             variant="outline"
             size="sm"
-            className="h-8 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
+            className="h-7 sm:h-8 px-2.5 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
           >
             Today
           </Button>
@@ -157,17 +155,17 @@ export function CalendarGrid({
             <button
               onClick={onPrevMonth}
               title="Previous Month"
-              className="p-1.5 text-[#8b949e] hover:text-white hover:bg-[#21262d] rounded-l-md transition-colors"
+              className="p-1 sm:p-1.5 text-[#8b949e] hover:text-white hover:bg-[#21262d] rounded-l-md transition-colors"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </button>
-            <div className="h-4 w-px bg-[#30363d]" />
+            <div className="h-3.5 sm:h-4 w-px bg-[#30363d]" />
             <button
               onClick={onNextMonth}
               title="Next Month"
-              className="p-1.5 text-[#8b949e] hover:text-white hover:bg-[#21262d] rounded-r-md transition-colors"
+              className="p-1 sm:p-1.5 text-[#8b949e] hover:text-white hover:bg-[#21262d] rounded-r-md transition-colors"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </button>
           </div>
         </div>
@@ -178,7 +176,7 @@ export function CalendarGrid({
         {WEEKDAYS.map((day, idx) => (
           <div
             key={day}
-            className={`py-2 text-[11px] sm:text-xs font-mono font-medium tracking-wider uppercase ${
+            className={`py-1.5 sm:py-2 text-[10px] sm:text-xs font-mono font-medium tracking-wider uppercase ${
               idx === 0 || idx === 6 ? 'text-[#6e7681]' : 'text-[#8b949e]'
             }`}
           >
@@ -199,7 +197,7 @@ export function CalendarGrid({
               key={`${day.date}-${index}`}
               onClick={() => onSelectDay(day)}
               className={cn(
-                'group relative flex flex-col justify-between p-2 sm:p-2.5 min-h-[95px] sm:min-h-[110px] transition-all text-left outline-none',
+                'group relative flex flex-col justify-between p-1.5 sm:p-2.5 min-h-[58px] sm:min-h-[85px] lg:min-h-[105px] transition-all text-left outline-none',
                 day.isCurrentMonth
                   ? 'bg-[#0d1117] hover:bg-[#161b22]'
                   : 'bg-[#090d14]/70 text-[#484f58] hover:bg-[#121620]',
@@ -211,7 +209,7 @@ export function CalendarGrid({
               <div className="flex items-center justify-between w-full">
                 <span
                   className={cn(
-                    'font-mono text-xs sm:text-sm transition-colors',
+                    'font-mono text-[11px] sm:text-xs md:text-sm transition-colors',
                     day.isCurrentMonth
                       ? 'text-[#c9d1d9] group-hover:text-white'
                       : 'text-[#484f58]',
@@ -222,12 +220,12 @@ export function CalendarGrid({
                   {day.dayNumber}
                 </span>
 
-                {/* Level / Intensity Indicator */}
+                {/* Intensity Indicator Dot */}
                 {hasActivity && (
                   <div className="flex items-center gap-1">
                     <span
                       className={cn(
-                        'h-2.5 w-2.5 rounded-sm transition-transform group-hover:scale-110',
+                        'h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-sm transition-transform group-hover:scale-110',
                         getDotStyle(day.level || (day.codingDurationText ? 2 : 1))
                       )}
                       title={`${day.totalCommits} commits, ${day.codingDurationText || '0m'} active`}
@@ -237,46 +235,46 @@ export function CalendarGrid({
               </div>
 
               {/* Day Content Summary (Time spent & commits) */}
-              <div className="mt-auto space-y-1 w-full overflow-hidden">
+              <div className="mt-auto space-y-0.5 sm:space-y-1 w-full overflow-hidden">
                 {hasActivity ? (
                   <>
                     {/* Exact coding time badge (e.g. 45m or 1h 30m) */}
                     {day.codingDurationText && day.codingDurationText !== '0m' ? (
-                      <div className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-cyan-950/80 border border-cyan-800/60 text-cyan-300">
-                        <Clock className="h-2.5 w-2.5 text-cyan-400 shrink-0" />
+                      <div className="flex items-center gap-0.5 sm:gap-1 rounded px-1 sm:px-1.5 py-0.5 text-[9px] sm:text-[10px] font-mono font-semibold bg-cyan-950/80 border border-cyan-800/60 text-cyan-300">
+                        <Clock className="h-2 w-2 sm:h-2.5 sm:w-2.5 text-cyan-400 shrink-0 hidden sm:inline" />
                         <span className="truncate">{day.codingDurationText}</span>
                       </div>
                     ) : primaryRepo ? (
-                      <div className="truncate rounded px-1.5 py-0.5 text-[10px] font-mono font-medium bg-[#21262d] text-emerald-300 group-hover:bg-[#30363d] transition-colors">
+                      <div className="truncate rounded px-1 sm:px-1.5 py-0.5 text-[9px] sm:text-[10px] font-mono font-medium bg-[#21262d] text-emerald-300 group-hover:bg-[#30363d] transition-colors hidden sm:block">
                         {primaryRepo}
                       </div>
                     ) : null}
 
                     {/* Commit & AI badge indicators */}
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#8b949e]">
+                    <div className="flex items-center gap-1 text-[9px] sm:text-[10px] font-mono text-[#8b949e]">
                       {day.totalCommits > 0 && (
                         <span className="flex items-center gap-0.5 text-sky-400">
-                          <GitCommit className="h-3 w-3" />
+                          <GitCommit className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                           <span>{day.totalCommits}</span>
                         </span>
                       )}
 
                       {day.aiSessions && day.aiSessions.length > 0 && (
-                        <span className="flex items-center gap-0.5 text-purple-400">
-                          <Bot className="h-3 w-3" />
+                        <span className="hidden sm:flex items-center gap-0.5 text-purple-400">
+                          <Bot className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                           <span>{day.aiSessions.length}</span>
                         </span>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="h-4" />
+                  <div className="h-2 sm:h-4" />
                 )}
               </div>
 
               {/* Highlight today dot */}
               {day.isToday && (
-                <div className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
+                <div className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
               )}
             </button>
           );

@@ -22,6 +22,7 @@ import { WakaTimeView } from '@/features/wakatime/components/wakatime-view';
 import { WakaTimeConnectModal } from '@/features/wakatime/components/wakatime-connect-modal';
 import { WakaTimeService, CustomEditorSession } from '@/features/wakatime/wakatime-service';
 import { WakaTimeDaySummary } from '@/features/wakatime/types';
+import { AIStudioView } from '@/features/ai-studio/components/ai-studio-view';
 
 const emptySubscribe = () => () => {};
 
@@ -71,7 +72,7 @@ export default function StrakvuPage() {
   const sessionStatus = sessionHook?.status || 'unauthenticated';
 
   const [mounted, setMounted] = useState(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'wakatime' | 'landing'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'wakatime' | 'aistudio' | 'landing'>('dashboard');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
   const storedProfileRaw = useSyncExternalStore(
@@ -130,6 +131,7 @@ export default function StrakvuPage() {
       const viewParam = params.get('view');
       if (viewParam === 'landing') setActiveView('landing');
       else if (viewParam === 'wakatime') setActiveView('wakatime');
+      else if (viewParam === 'aistudio') setActiveView('aistudio');
 
       const storedWaka = WakaTimeService.getStoredApiKey();
       if (storedWaka) setWakaKey(storedWaka);
@@ -586,6 +588,12 @@ export default function StrakvuPage() {
               setSelectedDayDate(newDate);
               loadWakaTime(newDate, wakaKey);
             }}
+          />
+        ) : activeView === 'aistudio' ? (
+          <AIStudioView
+            selectedDate={selectedDay?.date || activeQueryDate}
+            onSelectDate={(newDate) => setSelectedDayDate(newDate)}
+            onOpenConnectModal={() => setIsConnectModalOpen(true)}
           />
         ) : (
           <div className="space-y-6 animate-in fade-in duration-200">
