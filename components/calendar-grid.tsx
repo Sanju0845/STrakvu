@@ -1,7 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Bot, Compass, GitCommit, Sparkles, ChevronDown } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  Bot,
+  GitCommit,
+  Sparkles,
+  ChevronDown,
+  Clock,
+  Laptop,
+} from 'lucide-react';
 import { DayActivity } from '@/types/activity';
 import { Button } from './ui/button';
 import { cn, MONTH_NAMES } from '@/lib/utils';
@@ -74,7 +84,7 @@ export function CalendarGrid({
               </button>
             </div>
             <p className="text-[11px] text-[#8b949e] font-mono">
-              Explore your complete GitHub commits & journey across any date
+              Click any day to inspect exact coding time, commits & IDE history on the right
             </p>
 
             {/* Quick Month & Year Picker Dropdown */}
@@ -181,7 +191,7 @@ export function CalendarGrid({
       <div className="grid grid-cols-7 bg-[#21262d] gap-px">
         {monthActivities.map((day, index) => {
           const isSelected = selectedDay?.date === day.date;
-          const hasActivity = day.totalActivities > 0;
+          const hasActivity = day.totalActivities > 0 || (day.codingDurationText && day.codingDurationText !== '0m');
           const primaryRepo = day.repos[0]?.split('/')[1] || day.repos[0];
 
           return (
@@ -189,7 +199,7 @@ export function CalendarGrid({
               key={`${day.date}-${index}`}
               onClick={() => onSelectDay(day)}
               className={cn(
-                'group relative flex flex-col justify-between p-2 sm:p-2.5 min-h-[90px] sm:min-h-[105px] transition-all text-left outline-none',
+                'group relative flex flex-col justify-between p-2 sm:p-2.5 min-h-[95px] sm:min-h-[110px] transition-all text-left outline-none',
                 day.isCurrentMonth
                   ? 'bg-[#0d1117] hover:bg-[#161b22]'
                   : 'bg-[#090d14]/70 text-[#484f58] hover:bg-[#121620]',
@@ -197,7 +207,7 @@ export function CalendarGrid({
                 day.isToday && !isSelected && 'bg-emerald-950/20'
               )}
             >
-              {/* Day Number Header */}
+              {/* Day Number Header & Intensity Dot */}
               <div className="flex items-center justify-between w-full">
                 <span
                   className={cn(
@@ -218,24 +228,29 @@ export function CalendarGrid({
                     <span
                       className={cn(
                         'h-2.5 w-2.5 rounded-sm transition-transform group-hover:scale-110',
-                        getDotStyle(day.level)
+                        getDotStyle(day.level || (day.codingDurationText ? 2 : 1))
                       )}
-                      title={`${day.totalCommits} commits, ${day.totalActivities} total events`}
+                      title={`${day.totalCommits} commits, ${day.codingDurationText || '0m'} active`}
                     />
                   </div>
                 )}
               </div>
 
-              {/* Day Content Summary (Primary Project & Commit/AI Indicators) */}
+              {/* Day Content Summary (Time spent & commits) */}
               <div className="mt-auto space-y-1 w-full overflow-hidden">
                 {hasActivity ? (
                   <>
-                    {/* Primary repo badge */}
-                    {primaryRepo && (
+                    {/* Exact coding time badge (e.g. 45m or 1h 30m) */}
+                    {day.codingDurationText && day.codingDurationText !== '0m' ? (
+                      <div className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-cyan-950/80 border border-cyan-800/60 text-cyan-300">
+                        <Clock className="h-2.5 w-2.5 text-cyan-400 shrink-0" />
+                        <span className="truncate">{day.codingDurationText}</span>
+                      </div>
+                    ) : primaryRepo ? (
                       <div className="truncate rounded px-1.5 py-0.5 text-[10px] font-mono font-medium bg-[#21262d] text-emerald-300 group-hover:bg-[#30363d] transition-colors">
                         {primaryRepo}
                       </div>
-                    )}
+                    ) : null}
 
                     {/* Commit & AI badge indicators */}
                     <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#8b949e]">
@@ -259,9 +274,9 @@ export function CalendarGrid({
                 )}
               </div>
 
-              {/* Highlight today pill */}
+              {/* Highlight today dot */}
               {day.isToday && (
-                <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
+                <div className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
               )}
             </button>
           );

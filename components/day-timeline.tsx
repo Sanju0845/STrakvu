@@ -23,8 +23,13 @@ import {
   MessageSquare,
   Wand2,
   Layers,
+  Laptop,
+  Flame,
+  Activity,
+  Code2,
 } from 'lucide-react';
 import { DayActivity, ActivityEvent, AIChatSession } from '@/types/activity';
+import { CustomEditorSession } from '@/features/wakatime/wakatime-service';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { cn, formatDayTitle, formatExactTime, formatExactDateTimeWithZone } from '@/lib/utils';
@@ -33,10 +38,16 @@ interface DayTimelineProps {
   day: DayActivity | null;
   onClose?: () => void;
   onAddAIChat?: (date: string, chat: Omit<AIChatSession, 'id' | 'timestamp' | 'time'>) => void;
+  onAddEditorSession?: (session: CustomEditorSession) => void;
 }
 
-export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
-  const [activeTab, setActiveTab] = useState<'all' | 'github' | 'ai' | 'chrome'>('all');
+export function DayTimeline({
+  day,
+  onClose,
+  onAddAIChat,
+  onAddEditorSession,
+}: DayTimelineProps) {
+  const [activeTab, setActiveTab] = useState<'all' | 'github' | 'ide' | 'ai'>('all');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [expandedPushes, setExpandedPushes] = useState<Record<string, boolean>>({});
 
@@ -48,6 +59,13 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
   const [codeSnippet, setCodeSnippet] = useState('');
   const [targetRepo, setTargetRepo] = useState('');
 
+  // Log Custom IDE Session state (Qoder, Cursor, VS Code, etc.)
+  const [isAddingSession, setIsAddingSession] = useState(false);
+  const [selectedEditor, setSelectedEditor] = useState<'Qoder' | 'Cursor' | 'VS Code' | 'JetBrains' | 'Antigravity / Web IDE' | 'Terminal'>('Qoder');
+  const [sessionMinutes, setSessionMinutes] = useState<number>(45);
+  const [sessionProject, setSessionProject] = useState('');
+  const [sessionNotes, setSessionNotes] = useState('');
+
   if (!day) {
     return (
       <div className="rounded-xl border border-[#30363d] bg-[#0d1117] p-8 text-center">
@@ -55,8 +73,8 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
           <Clock className="h-6 w-6 text-emerald-400" />
         </div>
         <h3 className="text-sm font-semibold font-mono text-white">Select a Day</h3>
-        <p className="text-xs text-[#8b949e] mt-1 max-w-sm mx-auto">
-          Click any date on the calendar to inspect the exact commits, timestamps, and activity history for that day.
+        <p className="text-xs text-[#8b949e] mt-1 max-w-sm mx-auto font-sans">
+          Click any date on the left calendar to inspect exact coding time, commits, and IDE sessions.
         </p>
       </div>
     );
@@ -99,6 +117,27 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
     setIsAddingChat(false);
   };
 
+  const handleSubmitEditorSession = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (sessionMinutes <= 0) return;
+
+    if (onAddEditorSession) {
+      onAddEditorSession({
+        id: `sess-${Date.now()}`,
+        date: day.date,
+        editor: selectedEditor,
+        durationMinutes: sessionMinutes,
+        project: sessionProject.trim() || (day.repos[0] || 'strakvu'),
+        language: 'TypeScript',
+        startTime: 'Manual Log',
+        notes: sessionNotes.trim() || undefined,
+      });
+    }
+
+    setSessionNotes('');
+    setIsAddingSession(false);
+  };
+
   // Calculate day additions/deletions and total commits
   const totalCommitsCount = day.events.reduce((sum, e) => {
     return sum + (e.commits && e.commits.length > 0 ? e.commits.length : e.type === 'commit' || e.type === 'push' ? 1 : 0);
@@ -108,8 +147,8 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
   const totalDeletions = day.events.reduce((sum, e) => sum + (e.deletions || 0), 0);
 
   const aiCount = day.aiSessions?.length || 0;
-  const chromeCount = day.chromeResearch?.length || 0;
   const ghCount = day.events.length;
+  const codingTime = day.codingDurationText && day.codingDurationText !== '0m' ? day.codingDurationText : null;
 
   return (
     <div className="rounded-xl border border-[#30363d] bg-[#0d1117] shadow-xl overflow-hidden animate-in fade-in-50 duration-200">
@@ -117,7 +156,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
       <div className="border-b border-[#21262d] bg-[#161b22]/70 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="h-2 w-2 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
               <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold">
                 Daily Work Log
@@ -127,14 +166,21 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                   Today
                 </Badge>
               )}
+              {codingTime && (
+                <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-cyan-300 border-cyan-700 bg-cyan-950/60 font-mono">
+                  ⚡ {codingTime} active
+                </Badge>
+              )}
             </div>
-            <h3 className="mt-1 text-lg sm:text-xl font-bold font-mono text-white tracking-tight">
+
+            <h3 className="mt-1.5 text-lg sm:text-xl font-bold font-mono text-white tracking-tight">
               {formattedDayTitle}
             </h3>
+
             <p className="text-xs text-[#8b949e] font-mono mt-0.5">
-              {day.totalActivities === 0
-                ? 'No code activity logged'
-                : `${totalCommitsCount} commit${totalCommitsCount === 1 ? '' : 's'} across ${day.repos.length} repo${day.repos.length === 1 ? '' : 's'} · ${aiCount} AI prompt${aiCount === 1 ? '' : 's'}`}
+              {totalCommitsCount === 0 && !codingTime && aiCount === 0
+                ? 'No activity recorded for this day'
+                : `${totalCommitsCount} commit${totalCommitsCount === 1 ? '' : 's'} · ${codingTime ? `${codingTime} coding · ` : ''}${aiCount} AI prompt${aiCount === 1 ? '' : 's'}`}
             </p>
           </div>
 
@@ -181,7 +227,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                   : 'text-[#8b949e] hover:text-white'
               )}
             >
-              All ({ghCount + aiCount + chromeCount})
+              All
             </button>
 
             <button
@@ -198,6 +244,19 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
             </button>
 
             <button
+              onClick={() => setActiveTab('ide')}
+              className={cn(
+                'px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors',
+                activeTab === 'ide'
+                  ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-800/60'
+                  : 'text-[#8b949e] hover:text-white'
+              )}
+            >
+              <Laptop className="h-3 w-3" />
+              <span>IDE & Coding</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('ai')}
               className={cn(
                 'px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors',
@@ -211,17 +270,144 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
             </button>
           </div>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsAddingChat(!isAddingChat)}
-            className="h-7 text-xs font-mono border-[#30363d] text-purple-300 hover:text-white hover:border-purple-500"
-          >
-            <Plus className="h-3 w-3 mr-1 text-purple-400" />
-            <span>Log AI Prompt</span>
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setIsAddingSession(!isAddingSession);
+                setIsAddingChat(false);
+              }}
+              className="h-7 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white hover:border-cyan-500"
+            >
+              <Plus className="h-3 w-3 mr-1 text-cyan-400" />
+              <span>Log IDE Session</span>
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setIsAddingChat(!isAddingChat);
+                setIsAddingSession(false);
+              }}
+              className="h-7 text-xs font-mono border-[#30363d] text-purple-300 hover:text-white hover:border-purple-500"
+            >
+              <Plus className="h-3 w-3 mr-1 text-purple-400" />
+              <span>Log AI Prompt</span>
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* Log IDE Session Form (Qoder, Cursor, VS Code, JetBrains) */}
+      {isAddingSession && (
+        <form
+          onSubmit={handleSubmitEditorSession}
+          className="border-b border-[#21262d] bg-[#161b22]/95 p-4 space-y-3 animate-in slide-in-from-top-2 duration-150"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono font-semibold text-cyan-300 flex items-center gap-1.5">
+              <Laptop className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Log Active Coding Time for {day.date}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsAddingSession(false)}
+              className="text-[#8b949e] hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Editor Selection */}
+          <div>
+            <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
+              Which Editor / Tool did you use?
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {(['Qoder', 'Cursor', 'VS Code', 'JetBrains', 'Antigravity / Web IDE', 'Terminal'] as const).map((ed) => (
+                <button
+                  key={ed}
+                  type="button"
+                  onClick={() => setSelectedEditor(ed)}
+                  className={cn(
+                    'py-1.5 px-2 text-xs font-mono rounded-lg border text-center transition-colors',
+                    selectedEditor === ed
+                      ? 'border-cyan-500 bg-cyan-950/60 text-cyan-200 font-bold'
+                      : 'border-[#30363d] bg-[#0d1117] text-[#8b949e] hover:text-white'
+                  )}
+                >
+                  {ed}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
+                Duration (minutes)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                required
+                value={sessionMinutes}
+                onChange={(e) => setSessionMinutes(parseInt(e.target.value, 10) || 0)}
+                className="w-full rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
+                Project Name (Optional)
+              </label>
+              <input
+                type="text"
+                value={sessionProject}
+                onChange={(e) => setSessionProject(e.target.value)}
+                placeholder="e.g. strakvu"
+                className="w-full rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
+              File or Work description (Optional)
+            </label>
+            <input
+              type="text"
+              value={sessionNotes}
+              onChange={(e) => setSessionNotes(e.target.value)}
+              placeholder="e.g. components/calendar-grid.tsx & wakatime sync"
+              className="w-full rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAddingSession(false)}
+              className="h-7 text-xs font-mono border-[#30363d] text-[#8b949e]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              className="h-7 bg-cyan-700 hover:bg-cyan-600 text-white font-mono text-xs"
+            >
+              <Check className="h-3 w-3 mr-1" />
+              <span>Save Session</span>
+            </Button>
+          </div>
+        </form>
+      )}
 
       {/* Add AI Chat Form Modal/Inline */}
       {isAddingChat && (
@@ -310,22 +496,59 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
         </form>
       )}
 
-      {/* Timeline Stream with max height container (no infinite scroll) */}
+      {/* Timeline Stream with max height container */}
       <div className="p-4 sm:p-5 max-h-[520px] overflow-y-auto custom-scrollbar">
-        {day.events.length === 0 && (!day.aiSessions || day.aiSessions.length === 0) ? (
+        {day.events.length === 0 && (!day.aiSessions || day.aiSessions.length === 0) && !codingTime ? (
           <div className="py-12 text-center">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#161b22] border border-[#30363d] text-[#8b949e] mb-3">
               <GitCommit className="h-5 w-5 text-emerald-400" />
             </div>
             <h4 className="text-sm font-semibold font-mono text-white">
-              No activity on this day
+              No activity recorded on {formattedDayTitle}
             </h4>
             <p className="mt-1 text-xs text-[#8b949e] max-w-sm mx-auto font-sans leading-relaxed">
-              No GitHub events or code pushes recorded for this date.
+              No GitHub events, IDE heartbeats, or prompt sessions recorded for this date.
             </p>
           </div>
         ) : (
           <div className="space-y-5">
+            {/* Show IDE Sessions if on 'all' or 'ide' tab */}
+            {(activeTab === 'all' || activeTab === 'ide') && codingTime && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs font-mono text-cyan-400 font-semibold">
+                  <div className="flex items-center gap-2">
+                    <Laptop className="h-3.5 w-3.5" />
+                    <span>IDE Coding Sessions</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] text-cyan-300 border-cyan-700">
+                    Total: {codingTime}
+                  </Badge>
+                </div>
+
+                <div className="rounded-xl border border-cyan-900/40 bg-cyan-950/20 p-3.5 sm:p-4 hover:border-cyan-700/60 transition-colors">
+                  <div className="flex items-center justify-between text-xs font-mono gap-2 mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="default" className="text-[10px] bg-cyan-700">
+                        {day.editorsUsed?.[0] || 'Active IDE'}
+                      </Badge>
+                      <span className="text-[#8b949e] text-[11px] flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        <span>Duration: {codingTime}</span>
+                      </span>
+                    </div>
+                    {day.repos[0] && (
+                      <span className="text-xs font-mono text-cyan-300">
+                        → {day.repos[0]}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#c9d1d9] font-sans">
+                    Active work logged across {day.editorsUsed?.join(', ') || 'editor'}.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Show AI sessions if on 'all' or 'ai' tab */}
             {(activeTab === 'all' || activeTab === 'ai') && day.aiSessions && day.aiSessions.length > 0 && (
               <div className="space-y-3">
@@ -579,41 +802,6 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            )}
-
-            {/* Chrome Research Links */}
-            {(activeTab === 'all' || activeTab === 'chrome') && day.chromeResearch && day.chromeResearch.length > 0 && (
-              <div className="space-y-3 pt-2 border-t border-[#21262d]">
-                <div className="flex items-center gap-2 text-xs font-mono text-sky-400 font-semibold">
-                  <Compass className="h-3.5 w-3.5" />
-                  <span>Chrome Research & Documentation Visited</span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {day.chromeResearch.map((item) => (
-                    <a
-                      key={item.id}
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between p-2.5 rounded-lg border border-[#30363d] bg-[#161b22]/50 hover:bg-[#161b22] hover:border-sky-500/50 transition-colors group"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Globe className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-                        <span className="text-xs font-mono text-[#c9d1d9] group-hover:text-white truncate">
-                          {item.title}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-mono text-[#8b949e]">
-                          {formatExactTime(item.timestamp, item.time)}
-                        </span>
-                        <ExternalLink className="h-3 w-3 text-[#8b949e] group-hover:text-white" />
-                      </div>
-                    </a>
-                  ))}
                 </div>
               </div>
             )}

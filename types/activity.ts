@@ -69,6 +69,9 @@ export interface DayActivity {
   // Humanoid / developer life context for that day
   humanSummary?: string;
   primaryFocusRepo?: string;
+  codingDurationText?: string;
+  codingSeconds?: number;
+  editorsUsed?: string[];
   aiSessions?: AIChatSession[];
   chromeResearch?: ChromeResearchItem[];
 }

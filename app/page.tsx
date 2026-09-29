@@ -16,10 +16,11 @@ import { Button } from '@/components/ui/button';
 
 // Features (Modular organization)
 import { GitHubSummaryCard } from '@/features/github/components/github-summary-card';
+import { RepoFilter } from '@/features/github/components/repo-filter';
 import { WakaTimePanel } from '@/features/wakatime/components/wakatime-panel';
 import { WakaTimeView } from '@/features/wakatime/components/wakatime-view';
 import { WakaTimeConnectModal } from '@/features/wakatime/components/wakatime-connect-modal';
-import { WakaTimeService } from '@/features/wakatime/wakatime-service';
+import { WakaTimeService, CustomEditorSession } from '@/features/wakatime/wakatime-service';
 import { WakaTimeDaySummary } from '@/features/wakatime/types';
 
 const emptySubscribe = () => () => {};
@@ -46,6 +47,15 @@ function getStoredAIChatsSnapshot(): string {
   if (typeof window === 'undefined') return '';
   try {
     return localStorage.getItem('strakvu_aichats') || '';
+  } catch {
+    return '';
+  }
+}
+
+function getStoredEditorSessionsSnapshot(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return localStorage.getItem('strakvu_waka_sessions') || '';
   } catch {
     return '';
   }
@@ -82,10 +92,17 @@ export default function StrakvuPage() {
     getEmptyServerSnapshot
   );
 
+  const storedEditorSessionsRaw = useSyncExternalStore(
+    emptySubscribe,
+    getStoredEditorSessionsSnapshot,
+    getEmptyServerSnapshot
+  );
+
   // Profile override & state
   const [profileOverride, setProfileOverride] = useState<DeveloperProfile | null>(null);
   const [customPushesOverride, setCustomPushesOverride] = useState<Record<string, ActivityEvent[]> | null>(null);
   const [aiChatsOverride, setAiChatsOverride] = useState<Record<string, AIChatSession[]> | null>(null);
+  const [editorSessionsOverride, setEditorSessionsOverride] = useState<Record<string, CustomEditorSession[]> | null>(null);
 
   // GitHub live API state
   const [githubEventsByDate, setGithubEventsByDate] = useState<Record<string, ActivityEvent[]>>({});
@@ -126,9 +143,7 @@ export default function StrakvuPage() {
       try {
         const parsed = JSON.parse(storedProfileRaw);
         if (parsed && parsed.username) return parsed;
-      } catch {
-        // fallback
-      }
+      } catch {}
     }
     return INITIAL_DEVELOPER;
   }, [profileOverride, storedProfileRaw]);
@@ -139,9 +154,7 @@ export default function StrakvuPage() {
     if (storedCustomPushesRaw) {
       try {
         return JSON.parse(storedCustomPushesRaw);
-      } catch {
-        // fallback
-      }
+      } catch {}
     }
     return {};
   }, [customPushesOverride, storedCustomPushesRaw]);
@@ -152,12 +165,21 @@ export default function StrakvuPage() {
     if (storedAIChatsRaw) {
       try {
         return JSON.parse(storedAIChatsRaw);
-      } catch {
-        // fallback
-      }
+      } catch {}
     }
     return {};
   }, [aiChatsOverride, storedAIChatsRaw]);
+
+  // Derive custom editor sessions (Qoder, Cursor, VS Code, etc.)
+  const recordedEditorSessions: Record<string, CustomEditorSession[]> = useMemo(() => {
+    if (editorSessionsOverride) return editorSessionsOverride;
+    if (storedEditorSessionsRaw) {
+      try {
+        return JSON.parse(storedEditorSessionsRaw);
+      } catch {}
+    }
+    return {};
+  }, [editorSessionsOverride, storedEditorSessionsRaw]);
 
   // Fetch real GitHub activity (with caching and error resilience)
   const isFetchingRef = useRef(false);
@@ -241,6 +263,17 @@ export default function StrakvuPage() {
     setWakaKey(newKey);
     WakaTimeService.setStoredApiKey(newKey);
     loadWakaTime(activeQueryDate, newKey);
+  };
+
+  // Add custom IDE session (e.g. Qoder, Cursor, VS Code, etc.)
+  const handleAddEditorSession = (session: CustomEditorSession) => {
+    WakaTimeService.addCustomSession(session);
+    const updated = {
+      ...recordedEditorSessions,
+      [session.date]: [session, ...(recordedEditorSessions[session.date] || [])],
+    };
+    setEditorSessionsOverride(updated);
+    loadWakaTime(session.date, wakaKey);
   };
 
   // Fetch once on mount or when session state transitions - automatic recovery for Vercel
@@ -347,6 +380,7 @@ export default function StrakvuPage() {
       localStorage.removeItem('strakvu_github_token');
       localStorage.removeItem('strakvu_custom_pushes');
       localStorage.removeItem('strakvu_aichats');
+      localStorage.removeItem('strakvu_waka_sessions');
     } catch {}
   };
 
@@ -373,7 +407,7 @@ export default function StrakvuPage() {
     return map;
   }, [githubEventsByDate]);
 
-  // Merge Live GitHub Events with any custom AI chats
+  // Merge Live GitHub Events with IDE Coding Duration and AI chats
   const rawMonthActivities = useMemo(() => {
     const baseDays = getCleanMonthActivities(currentDate.getFullYear(), currentDate.getMonth());
 
@@ -383,7 +417,24 @@ export default function StrakvuPage() {
       const allEvents = [...ghEvents, ...userPushes];
 
       const dayAIChats = recordedAIChats[day.date] || [];
-      const totalActivities = allEvents.length + dayAIChats.length;
+      const daySessions = recordedEditorSessions[day.date] || [];
+
+      // Calculate total coding minutes for this day
+      let totalMinutes = 0;
+      const editorsSet = new Set<string>();
+      for (const s of daySessions) {
+        totalMinutes += s.durationMinutes || 0;
+        if (s.editor) editorsSet.add(s.editor);
+      }
+
+      let durationText = '';
+      if (totalMinutes > 0) {
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        durationText = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+      }
+
+      const totalActivities = allEvents.length + dayAIChats.length + (totalMinutes > 0 ? 1 : 0);
 
       const reposSet = new Set<string>();
       let commitsCount = 0;
@@ -398,10 +449,10 @@ export default function StrakvuPage() {
       }
 
       let level: 0 | 1 | 2 | 3 | 4 = 0;
-      if (commitsCount > 8 || totalActivities > 10) level = 4;
-      else if (commitsCount > 4 || totalActivities > 6) level = 3;
-      else if (commitsCount > 1 || totalActivities > 3) level = 2;
-      else if (totalActivities > 0) level = 1;
+      if (commitsCount > 8 || totalMinutes > 240) level = 4;
+      else if (commitsCount > 4 || totalMinutes > 120) level = 3;
+      else if (commitsCount > 1 || totalMinutes > 30) level = 2;
+      else if (totalActivities > 0 || totalMinutes > 0) level = 1;
 
       return {
         ...day,
@@ -410,11 +461,14 @@ export default function StrakvuPage() {
         totalCommits: commitsCount,
         level,
         repos: Array.from(reposSet),
+        codingDurationText: durationText,
+        codingSeconds: totalMinutes * 60,
+        editorsUsed: Array.from(editorsSet),
         humanSummary: storiesByDate[day.date] || day.humanSummary || '',
         aiSessions: dayAIChats.length > 0 ? dayAIChats : undefined,
       };
     });
-  }, [currentDate, eventsByLocalDate, customPushes, recordedAIChats, storiesByDate]);
+  }, [currentDate, eventsByLocalDate, customPushes, recordedAIChats, recordedEditorSessions, storiesByDate]);
 
   // Collect all available repositories
   const availableRepos = useMemo(() => {
@@ -528,6 +582,10 @@ export default function StrakvuPage() {
             selectedDate={selectedDay?.date || activeQueryDate}
             onOpenConnectModal={() => setIsWakaModalOpen(true)}
             isCustomKeySet={Boolean(wakaKey)}
+            onSelectDate={(newDate) => {
+              setSelectedDayDate(newDate);
+              loadWakaTime(newDate, wakaKey);
+            }}
           />
         ) : (
           <div className="space-y-6 animate-in fade-in duration-200">
@@ -553,7 +611,7 @@ export default function StrakvuPage() {
                     <div>
                       <h4 className="text-sm font-bold font-mono text-white">WakaTime IDE Pulse</h4>
                       <p className="text-[11px] text-[#8b949e] font-mono">
-                        {wakaKey ? 'Live API connected' : 'Auto tracking active'}
+                        {wakaKey ? 'Live API connected' : 'Custom sessions active'}
                       </p>
                     </div>
                   </div>
@@ -580,13 +638,15 @@ export default function StrakvuPage() {
 
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono">
                   <div className="bg-[#161b22]/60 p-2.5 rounded-lg border border-[#21262d]">
-                    <span className="text-[10px] text-[#8b949e] block">Today's Coding Time</span>
-                    <span className="text-sm font-bold text-cyan-300 font-mono">{wakaSummary?.totalText || '3h 25m'}</span>
+                    <span className="text-[10px] text-[#8b949e] block">Selected Day Coding</span>
+                    <span className="text-sm font-bold text-cyan-300 font-mono">
+                      {selectedDay?.codingDurationText || wakaSummary?.totalText || '0m'}
+                    </span>
                   </div>
                   <div className="bg-[#161b22]/60 p-2.5 rounded-lg border border-[#21262d]">
-                    <span className="text-[10px] text-[#8b949e] block">Top Active Editor</span>
+                    <span className="text-[10px] text-[#8b949e] block">Primary Editor</span>
                     <span className="text-sm font-bold text-white font-mono truncate block">
-                      {wakaSummary?.editors?.[0]?.name || 'Cursor'}
+                      {selectedDay?.editorsUsed?.[0] || wakaSummary?.editors?.[0]?.name || 'None'}
                     </span>
                   </div>
                 </div>
@@ -618,67 +678,14 @@ export default function StrakvuPage() {
               selectedMonthName={monthName}
             />
 
-            {/* Repository Filter Toolbar & Side View Toggles */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#161b22]/40 p-3 rounded-xl border border-[#21262d]">
-              {/* Repo Selector */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-                <span className="flex items-center gap-1 text-xs font-mono text-[#8b949e] shrink-0">
-                  <Filter className="h-3 w-3" />
-                  <span>Filter Repo:</span>
-                </span>
-                <button
-                  onClick={() => setSelectedRepoFilter('all')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-mono shrink-0 transition-colors ${
-                    selectedRepoFilter === 'all'
-                      ? 'bg-emerald-950/80 border border-emerald-700/70 text-emerald-300 font-medium'
-                      : 'border border-transparent text-[#8b949e] hover:text-white'
-                  }`}
-                >
-                  all repos ({availableRepos.length})
-                </button>
-                {availableRepos.map((repo) => (
-                  <button
-                    key={repo}
-                    onClick={() => setSelectedRepoFilter(repo)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-mono shrink-0 transition-colors truncate max-w-[200px] ${
-                      selectedRepoFilter === repo
-                        ? 'bg-emerald-950/80 border border-emerald-700/70 text-emerald-300 font-medium'
-                        : 'border border-transparent text-[#8b949e] hover:text-white'
-                    }`}
-                  >
-                    {repo.split('/')[1] || repo}
-                  </button>
-                ))}
-              </div>
+            {/* Polished Clean Repository Filter Toolbar (No horizontal scrollbars) */}
+            <RepoFilter
+              availableRepos={availableRepos}
+              selectedRepo={selectedRepoFilter}
+              onSelectRepo={setSelectedRepoFilter}
+            />
 
-              {/* Side Panel Toggle */}
-              <div className="flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] self-end sm:self-auto text-xs font-mono">
-                <button
-                  onClick={() => setActiveSidePanel('timeline')}
-                  className={`px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
-                    activeSidePanel === 'timeline'
-                      ? 'bg-[#21262d] text-emerald-300 font-medium'
-                      : 'text-[#8b949e] hover:text-white'
-                  }`}
-                >
-                  <GitCommit className="h-3 w-3" />
-                  <span>Git Timeline</span>
-                </button>
-                <button
-                  onClick={() => setActiveSidePanel('wakatime')}
-                  className={`px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
-                    activeSidePanel === 'wakatime'
-                      ? 'bg-[#21262d] text-cyan-300 font-medium'
-                      : 'text-[#8b949e] hover:text-white'
-                  }`}
-                >
-                  <Clock className="h-3 w-3" />
-                  <span>WakaTime Pulse</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Activity Grid + Companion Side Panel */}
+            {/* Activity Grid (Left) + Day Timeline Inspection (Right) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Left Column: Interactive Calendar Activity Grid */}
               <div className="lg:col-span-7 xl:col-span-7">
@@ -694,22 +701,14 @@ export default function StrakvuPage() {
                 />
               </div>
 
-              {/* Right Column: Dynamic Side Panel (Git Timeline OR WakaTime & Editor Pulse) */}
+              {/* Right Column: Deep-Dive Day Inspection (Exact Commits, IDE Sessions, Prompts) */}
               <div className="lg:col-span-5 xl:col-span-5 space-y-4">
-                {activeSidePanel === 'timeline' ? (
-                  <DayTimeline
-                    day={selectedDay}
-                    onClose={() => setSelectedDayDate(null)}
-                    onAddAIChat={handleAddAIChat}
-                  />
-                ) : (
-                  <WakaTimePanel
-                    summary={wakaSummary}
-                    selectedDate={selectedDay?.date || activeQueryDate}
-                    onOpenConnectModal={() => setIsWakaModalOpen(true)}
-                    isCustomKeySet={Boolean(wakaKey)}
-                  />
-                )}
+                <DayTimeline
+                  day={selectedDay}
+                  onClose={() => setSelectedDayDate(null)}
+                  onAddAIChat={handleAddAIChat}
+                  onAddEditorSession={handleAddEditorSession}
+                />
               </div>
             </div>
           </div>

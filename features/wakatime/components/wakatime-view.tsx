@@ -12,7 +12,9 @@ import {
   Sparkles,
   Zap,
   Layers,
+  ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ExternalLink,
   ShieldCheck,
   Cpu,
@@ -22,11 +24,13 @@ import {
   TrendingUp,
   BarChart3,
   Bot,
+  RefreshCw,
+  CheckCircle2,
 } from 'lucide-react';
-import { WakaTimeDaySummary, WakaEditor, WakaLanguage, WakaProject } from '../types';
+import { WakaTimeDaySummary } from '../types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { cn, formatDayTitle, formatDate } from '@/lib/utils';
 
 interface WakaTimeViewProps {
   summary: WakaTimeDaySummary | null;
@@ -45,11 +49,28 @@ export function WakaTimeView({
 }: WakaTimeViewProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'editors' | 'languages' | 'projects' | 'heartbeats'>('all');
 
-  const totalTime = summary?.totalText || '0 mins';
+  const totalTime = summary?.totalText || '0m';
   const editors = summary?.editors || [];
   const languages = summary?.languages || [];
   const projects = summary?.projects || [];
   const heartbeats = summary?.heartbeats || [];
+
+  // Date Navigation helpers
+  const handleOffsetDay = (days: number) => {
+    const current = new Date(selectedDate + 'T12:00:00Z');
+    current.setUTCDate(current.getUTCDate() + days);
+    if (onSelectDate) {
+      onSelectDate(formatDate(current));
+    }
+  };
+
+  const handleJumpToday = () => {
+    if (onSelectDate) {
+      onSelectDate(formatDate(new Date()));
+    }
+  };
+
+  const formattedDateTitle = formatDayTitle(selectedDate);
 
   const getEditorBadge = (name: string) => {
     const lower = name.toLowerCase();
@@ -84,7 +105,7 @@ export function WakaTimeView({
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-xs py-0.5 text-cyan-300 border-cyan-500/40">
-                  Simulated Demo
+                  Custom Sessions Active
                 </Badge>
               )}
             </div>
@@ -93,7 +114,7 @@ export function WakaTimeView({
               Automated IDE & Editor Analytics
             </h2>
             <p className="text-xs sm:text-sm text-[#8b949e] font-sans max-w-2xl leading-relaxed">
-              Track minute-by-minute coding heartbeats across <span className="text-cyan-300 font-mono">Cursor</span>, <span className="text-sky-300 font-mono">VS Code</span>, <span className="text-emerald-300 font-mono">Qoder</span>, and <span className="text-purple-300 font-mono">Web IDEs</span> without manual entries.
+              Track minute-by-minute coding heartbeats across <span className="text-cyan-300 font-mono">Cursor</span>, <span className="text-sky-300 font-mono">VS Code</span>, <span className="text-emerald-300 font-mono">Qoder</span>, and <span className="text-purple-300 font-mono">Web IDEs</span> with zero manual entry.
             </p>
           </div>
 
@@ -108,8 +129,50 @@ export function WakaTimeView({
           </div>
         </div>
 
-        {/* Big Highlights Bar */}
-        <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        {/* Date Selector Navigation Toolbar */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[#30363d] pt-4">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-[#30363d] bg-[#0d1117]">
+              <button
+                type="button"
+                onClick={() => handleOffsetDay(-1)}
+                title="Previous Day"
+                className="p-1.5 text-[#8b949e] hover:text-white hover:bg-[#21262d] rounded-l-md transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="px-3 py-1 text-xs font-mono font-bold text-white flex items-center gap-2">
+                <Calendar className="h-3.5 w-3.5 text-cyan-400" />
+                <span>{formattedDateTitle}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOffsetDay(1)}
+                title="Next Day"
+                className="p-1.5 text-[#8b949e] hover:text-white hover:bg-[#21262d] rounded-r-md transition-colors"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleJumpToday}
+              className="h-8 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
+            >
+              Today
+            </Button>
+          </div>
+
+          <div className="text-xs font-mono text-[#8b949e]">
+            Viewing active logs for: <code className="text-cyan-300 font-bold">{selectedDate}</code>
+          </div>
+        </div>
+
+        {/* Highlights Bar */}
+        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <div className="rounded-xl border border-[#30363d] bg-[#0d1117]/80 p-4 backdrop-blur-sm">
             <div className="flex items-center gap-1.5 text-xs font-mono text-[#8b949e]">
               <Flame className="h-4 w-4 text-amber-400" />
@@ -126,7 +189,7 @@ export function WakaTimeView({
               <span>Primary Editor</span>
             </div>
             <div className="mt-2 text-base sm:text-lg font-bold font-mono text-cyan-300 truncate">
-              {editors[0]?.name || 'Cursor AI'}
+              {editors[0]?.name || 'None'}
             </div>
           </div>
 
@@ -136,7 +199,7 @@ export function WakaTimeView({
               <span>Top Language</span>
             </div>
             <div className="mt-2 text-base sm:text-lg font-bold font-mono text-emerald-300 truncate">
-              {languages[0]?.name || 'TypeScript'}
+              {languages[0]?.name || 'None'}
             </div>
           </div>
 
@@ -146,7 +209,7 @@ export function WakaTimeView({
               <span>Active Project</span>
             </div>
             <div className="mt-2 text-base sm:text-lg font-bold font-mono text-purple-300 truncate">
-              {projects[0]?.name || 'strakvu'}
+              {projects[0]?.name || 'None'}
             </div>
           </div>
         </div>
@@ -185,30 +248,36 @@ export function WakaTimeView({
                 <span className="text-xs font-mono text-[#8b949e]">{editors.length} detected</span>
               </div>
 
-              <div className="space-y-3.5">
-                {editors.map((ed) => {
-                  const meta = getEditorBadge(ed.name);
-                  return (
-                    <div key={ed.name} className="rounded-lg border border-[#30363d] bg-[#161b22]/60 p-3.5">
-                      <div className="flex items-center justify-between text-xs font-mono mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className={cn('px-2 py-0.5 rounded border font-semibold text-[11px]', meta.color)}>
-                            {meta.badge}
-                          </span>
-                          <span className="text-[#8b949e]">{ed.percent}% duration</span>
+              {editors.length === 0 ? (
+                <div className="py-6 text-center text-xs font-mono text-[#8b949e]">
+                  No active editor heartbeats recorded for {selectedDate}.
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  {editors.map((ed) => {
+                    const meta = getEditorBadge(ed.name);
+                    return (
+                      <div key={ed.name} className="rounded-lg border border-[#30363d] bg-[#161b22]/60 p-3.5">
+                        <div className="flex items-center justify-between text-xs font-mono mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={cn('px-2 py-0.5 rounded border font-semibold text-[11px]', meta.color)}>
+                              {meta.badge}
+                            </span>
+                            <span className="text-[#8b949e]">{ed.percent}% duration</span>
+                          </div>
+                          <span className="font-bold text-white font-mono text-sm">{ed.text}</span>
                         </div>
-                        <span className="font-bold text-white font-mono text-sm">{ed.text}</span>
+                        <div className="h-2 w-full bg-[#21262d] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full"
+                            style={{ width: `${ed.percent}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-2 w-full bg-[#21262d] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full"
-                          style={{ width: `${ed.percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -223,29 +292,35 @@ export function WakaTimeView({
                 <span className="text-xs font-mono text-[#8b949e]">{languages.length} languages</span>
               </div>
 
-              <div className="space-y-3.5">
-                {languages.map((lang) => (
-                  <div key={lang.name} className="rounded-lg border border-[#30363d] bg-[#161b22]/60 p-3.5">
-                    <div className="flex items-center justify-between text-xs font-mono mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: lang.color || '#38bdf8' }} />
-                        <span className="font-bold text-white">{lang.name}</span>
-                        <span className="text-[#8b949e]">({lang.percent}%)</span>
+              {languages.length === 0 ? (
+                <div className="py-6 text-center text-xs font-mono text-[#8b949e]">
+                  No languages recorded for {selectedDate}.
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  {languages.map((lang) => (
+                    <div key={lang.name} className="rounded-lg border border-[#30363d] bg-[#161b22]/60 p-3.5">
+                      <div className="flex items-center justify-between text-xs font-mono mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: lang.color || '#38bdf8' }} />
+                          <span className="font-bold text-white">{lang.name}</span>
+                          <span className="text-[#8b949e]">({lang.percent}%)</span>
+                        </div>
+                        <span className="font-bold text-emerald-400 font-mono text-sm">{lang.text}</span>
                       </div>
-                      <span className="font-bold text-emerald-400 font-mono text-sm">{lang.text}</span>
+                      <div className="h-2 w-full bg-[#21262d] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${lang.percent}%`,
+                            backgroundColor: lang.color || '#38bdf8',
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-2 w-full bg-[#21262d] rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${lang.percent}%`,
-                          backgroundColor: lang.color || '#38bdf8',
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -263,24 +338,30 @@ export function WakaTimeView({
                 <span className="text-xs font-mono text-[#8b949e]">{projects.length} projects</span>
               </div>
 
-              <div className="space-y-3">
-                {projects.map((proj) => (
-                  <div key={proj.name} className="rounded-lg border border-[#30363d] bg-[#161b22]/60 p-3.5 flex items-center justify-between">
-                    <div>
-                      <span className="font-bold font-mono text-white text-sm block">{proj.name}</span>
-                      {proj.branch && (
-                        <span className="text-[11px] font-mono text-[#8b949e] block mt-0.5">
-                          branch: <code className="text-purple-300">{proj.branch}</code>
-                        </span>
-                      )}
+              {projects.length === 0 ? (
+                <div className="py-6 text-center text-xs font-mono text-[#8b949e]">
+                  No projects recorded for {selectedDate}.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {projects.map((proj) => (
+                    <div key={proj.name} className="rounded-lg border border-[#30363d] bg-[#161b22]/60 p-3.5 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold font-mono text-white text-sm block">{proj.name}</span>
+                        {proj.branch && (
+                          <span className="text-[11px] font-mono text-[#8b949e] block mt-0.5">
+                            branch: <code className="text-purple-300">{proj.branch}</code>
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="font-mono font-bold text-purple-300 text-sm block">{proj.text}</span>
+                        <span className="text-[11px] font-mono text-[#8b949e]">{proj.percent}% share</span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className="font-mono font-bold text-purple-300 text-sm block">{proj.text}</span>
-                      <span className="text-[11px] font-mono text-[#8b949e]">{proj.percent}% share</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -297,7 +378,9 @@ export function WakaTimeView({
 
               <div className="space-y-3 max-h-[380px] overflow-y-auto custom-scrollbar">
                 {heartbeats.length === 0 ? (
-                  <p className="text-xs text-[#8b949e] font-mono py-4 text-center">No heartbeat intervals logged for this date.</p>
+                  <p className="text-xs text-[#8b949e] font-mono py-4 text-center">
+                    No heartbeat intervals logged for {selectedDate}.
+                  </p>
                 ) : (
                   heartbeats.map((hb) => (
                     <div
