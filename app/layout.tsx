@@ -146,7 +146,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-screen bg-[#090d14] text-[#c9d1d9] antialiased overflow-x-hidden font-sans">
+      <body
+        suppressHydrationWarning
+        className="min-h-screen bg-[#090d14] text-[#c9d1d9] antialiased overflow-x-hidden font-sans"
+      >
         <Providers>{children}</Providers>
       </body>
     </html>
