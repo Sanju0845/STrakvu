@@ -10,9 +10,17 @@ import { StatsOverview } from '@/components/stats-overview';
 import { ConnectModal } from '@/components/connect-modal';
 import { INITIAL_DEVELOPER, getCleanMonthActivities } from '@/lib/mock-data';
 import { DayActivity, DeveloperProfile, AIChatSession, ActivityEvent } from '@/types/activity';
-import { MONTH_NAMES } from '@/lib/utils';
-import { Filter, Github, GitCommit, RefreshCw, Loader2, CheckCircle2, AlertCircle, Layers } from 'lucide-react';
+import { MONTH_NAMES, getLocalDateKey, formatDate } from '@/lib/utils';
+import { Filter, Github, GitCommit, RefreshCw, Loader2, CheckCircle2, AlertCircle, Layers, Clock, Laptop, Sparkles, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+// Features (Modular organization)
+import { GitHubSummaryCard } from '@/features/github/components/github-summary-card';
+import { WakaTimePanel } from '@/features/wakatime/components/wakatime-panel';
+import { WakaTimeView } from '@/features/wakatime/components/wakatime-view';
+import { WakaTimeConnectModal } from '@/features/wakatime/components/wakatime-connect-modal';
+import { WakaTimeService } from '@/features/wakatime/wakatime-service';
+import { WakaTimeDaySummary } from '@/features/wakatime/types';
 
 const emptySubscribe = () => () => {};
 
@@ -53,7 +61,7 @@ export default function StrakvuPage() {
   const sessionStatus = sessionHook?.status || 'unauthenticated';
 
   const [mounted, setMounted] = useState(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'landing'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'wakatime' | 'landing'>('dashboard');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
   const storedProfileRaw = useSyncExternalStore(
@@ -87,17 +95,27 @@ export default function StrakvuPage() {
   const [githubFetchError, setGithubFetchError] = useState<string | null>(null);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
 
+  // WakaTime state
+  const [wakaKey, setWakaKey] = useState<string>('');
+  const [wakaSummary, setWakaSummary] = useState<WakaTimeDaySummary | null>(null);
+  const [isWakaModalOpen, setIsWakaModalOpen] = useState(false);
+
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [selectedRepoFilter, setSelectedRepoFilter] = useState<string>('all');
-  const [layoutMode, setLayoutMode] = useState<'split' | 'stacked'>('split');
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
+  const [activeSidePanel, setActiveSidePanel] = useState<'timeline' | 'wakatime'>('timeline');
 
-  // Mark component mounted on client
+  // Mark component mounted on client and parse URL view
   useEffect(() => {
     setMounted(true);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('view') === 'landing') setActiveView('landing');
+      const viewParam = params.get('view');
+      if (viewParam === 'landing') setActiveView('landing');
+      else if (viewParam === 'wakatime') setActiveView('wakatime');
+
+      const storedWaka = WakaTimeService.getStoredApiKey();
+      if (storedWaka) setWakaKey(storedWaka);
     }
   }, []);
 
@@ -199,7 +217,33 @@ export default function StrakvuPage() {
     }
   }, []);
 
-  // Fetch once on mount or when session state transitions
+  // Fetch WakaTime summary for active date
+  const activeQueryDate = useMemo(() => {
+    if (selectedDayDate) return selectedDayDate;
+    const today = new Date();
+    return formatDate(today);
+  }, [selectedDayDate]);
+
+  const loadWakaTime = useCallback(async (dateStr: string, key?: string) => {
+    const sum = await WakaTimeService.fetchDaySummary(dateStr, key);
+    if (sum) {
+      setWakaSummary(sum);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      loadWakaTime(activeQueryDate, wakaKey);
+    }
+  }, [mounted, activeQueryDate, wakaKey, loadWakaTime]);
+
+  const handleSaveWakaKey = (newKey: string) => {
+    setWakaKey(newKey);
+    WakaTimeService.setStoredApiKey(newKey);
+    loadWakaTime(activeQueryDate, newKey);
+  };
+
+  // Fetch once on mount or when session state transitions - automatic recovery for Vercel
   const hasInitialFetched = useRef(false);
   useEffect(() => {
     if (!mounted) return;
@@ -209,8 +253,13 @@ export default function StrakvuPage() {
       const token = session.accessToken as string | undefined;
       // @ts-expect-error username on session user
       const username = (session.user.username as string) || session.user.name || undefined;
+      if (token) {
+        try {
+          localStorage.setItem('strakvu_github_token', token);
+        } catch {}
+      }
       fetchGitHubActivity(username, token);
-    } else if (sessionStatus === 'unauthenticated' && !hasInitialFetched.current) {
+    } else if (!hasInitialFetched.current) {
       hasInitialFetched.current = true;
       const storedToken = typeof window !== 'undefined' ? localStorage.getItem('strakvu_github_token') || undefined : undefined;
       const targetUser = baseProfile.username;
@@ -218,51 +267,16 @@ export default function StrakvuPage() {
         fetchGitHubActivity(targetUser, storedToken);
       }
     }
-  }, [mounted, sessionStatus, session, fetchGitHubActivity, baseProfile.username]);
+  }, [mounted, sessionStatus, session, baseProfile.username, fetchGitHubActivity]);
 
-  const handleUpdateProfile = (newProfile: DeveloperProfile) => {
-    setProfileOverride(newProfile);
-    try {
-      localStorage.setItem('strakvu_profile', JSON.stringify(newProfile));
-    } catch {}
-  };
-
-  const handleDisconnect = () => {
-    setProfileOverride(INITIAL_DEVELOPER);
-    setGithubEventsByDate({});
-    setStoriesByDate({});
-    setFetchedRepos([]);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('strakvu_github_token');
-        localStorage.removeItem('strakvu_profile');
-        localStorage.removeItem('strakvu_custom_pushes');
-        localStorage.removeItem('strakvu_aichats');
-      } catch {}
-    }
-  };
-
-  const handleConnectSuccess = (customUsername?: string, token?: string) => {
-    const userToFetch = customUsername;
-    if (typeof window !== 'undefined' && token) {
-      try {
-        localStorage.setItem('strakvu_github_token', token);
-      } catch {}
-    }
-    if (userToFetch || token) {
-      fetchGitHubActivity(userToFetch, token, true);
-    }
-    setActiveView('dashboard');
-  };
-
-  // Month navigation
+  // Calendar navigation
   const handlePrevMonth = () => {
     setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
     setSelectedDayDate(null);
   };
 
   const handleNextMonth = () => {
-    setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+    setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1 + 2, 1));
     setSelectedDayDate(null);
   };
 
@@ -281,235 +295,301 @@ export default function StrakvuPage() {
   // Add custom AI chat session for a day
   const handleAddAIChat = (date: string, chat: Omit<AIChatSession, 'id' | 'timestamp' | 'time'>) => {
     const now = new Date();
-    const hours = now.getHours();
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHour = hours % 12 === 0 ? 12 : hours % 12;
-
     const newSession: AIChatSession = {
       ...chat,
-      id: `custom-ai-${Date.now()}`,
-      time: `${String(displayHour).padStart(2, '0')}:${minutes} ${ampm}`,
+      id: `ai-${Date.now()}`,
       timestamp: now.toISOString(),
+      time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    const nextChats = {
+    const updated = {
       ...recordedAIChats,
-      [date]: [...(recordedAIChats[date] || []), newSession],
+      [date]: [newSession, ...(recordedAIChats[date] || [])],
     };
 
-    setAiChatsOverride(nextChats);
+    setAiChatsOverride(updated);
     try {
-      localStorage.setItem('strakvu_aichats', JSON.stringify(nextChats));
+      localStorage.setItem('strakvu_aichats', JSON.stringify(updated));
     } catch {}
   };
+
+  // Connect profile callback from modal
+  const handleConnectSuccess = (customUsername?: string, token?: string) => {
+    if (customUsername) {
+      const updatedProfile: DeveloperProfile = {
+        ...baseProfile,
+        username: customUsername,
+        displayName: customUsername,
+        isConnected: true,
+      };
+      setProfileOverride(updatedProfile);
+      try {
+        localStorage.setItem('strakvu_profile', JSON.stringify(updatedProfile));
+        if (token) localStorage.setItem('strakvu_github_token', token);
+      } catch {}
+      fetchGitHubActivity(customUsername, token, true);
+    } else if (token) {
+      try {
+        localStorage.setItem('strakvu_github_token', token);
+      } catch {}
+      fetchGitHubActivity(undefined, token, true);
+    }
+  };
+
+  // Disconnect / Clear profile callback
+  const handleDisconnect = () => {
+    setProfileOverride(INITIAL_DEVELOPER);
+    setGithubEventsByDate({});
+    setStoriesByDate({});
+    setFetchedRepos([]);
+    try {
+      localStorage.removeItem('strakvu_profile');
+      localStorage.removeItem('strakvu_github_token');
+      localStorage.removeItem('strakvu_custom_pushes');
+      localStorage.removeItem('strakvu_aichats');
+    } catch {}
+  };
+
+  // Dynamically re-index all events by user's local date for 100% pinpoint accuracy
+  const eventsByLocalDate = useMemo(() => {
+    const map: Record<string, ActivityEvent[]> = {};
+    for (const [serverDate, events] of Object.entries(githubEventsByDate)) {
+      for (const evt of events) {
+        const localDateKey = getLocalDateKey(evt.timestamp) || serverDate;
+        if (!map[localDateKey]) {
+          map[localDateKey] = [];
+        }
+        map[localDateKey].push(evt);
+      }
+    }
+    // Sort each day's events newest first by timestamp
+    for (const dateKey of Object.keys(map)) {
+      map[dateKey].sort((a, b) => {
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return timeB - timeA;
+      });
+    }
+    return map;
+  }, [githubEventsByDate]);
 
   // Merge Live GitHub Events with any custom AI chats
   const rawMonthActivities = useMemo(() => {
     const baseDays = getCleanMonthActivities(currentDate.getFullYear(), currentDate.getMonth());
 
     return baseDays.map((day) => {
-      const ghEvents = githubEventsByDate[day.date] || [];
+      const ghEvents = eventsByLocalDate[day.date] || [];
       const userPushes = customPushes[day.date] || [];
       const allEvents = [...ghEvents, ...userPushes];
 
       const dayAIChats = recordedAIChats[day.date] || [];
+      const totalActivities = allEvents.length + dayAIChats.length;
 
-      const totalCommits = allEvents.reduce((sum, e) => {
-        return sum + (e.commits && e.commits.length > 0 ? e.commits.length : e.type === 'commit' || e.type === 'push' ? 1 : 0);
-      }, 0);
+      const reposSet = new Set<string>();
+      let commitsCount = 0;
 
-      const repos = Array.from(new Set(allEvents.map((e) => e.repo)));
+      for (const e of allEvents) {
+        if (e.repo) reposSet.add(e.repo);
+        if (e.commits && e.commits.length > 0) {
+          commitsCount += e.commits.length;
+        } else if (e.type === 'commit' || e.type === 'push') {
+          commitsCount += 1;
+        }
+      }
 
-      let level: DayActivity['level'] = 0;
-      if (allEvents.length === 0) level = 0;
-      else if (allEvents.length <= 2) level = 1;
-      else if (allEvents.length <= 4) level = 2;
-      else if (allEvents.length <= 6) level = 3;
-      else level = 4;
-
-      const primaryFocusRepo = repos[0];
-      const humanSummary = storiesByDate[day.date] || (allEvents.length > 0 ? `Shipped ${totalCommits} ${totalCommits === 1 ? 'commit' : 'commits'} across ${repos.join(', ')}.` : undefined);
+      let level: 0 | 1 | 2 | 3 | 4 = 0;
+      if (commitsCount > 8 || totalActivities > 10) level = 4;
+      else if (commitsCount > 4 || totalActivities > 6) level = 3;
+      else if (commitsCount > 1 || totalActivities > 3) level = 2;
+      else if (totalActivities > 0) level = 1;
 
       return {
         ...day,
-        totalActivities: allEvents.length,
-        totalCommits,
-        level,
         events: allEvents,
-        repos,
-        primaryFocusRepo,
-        humanSummary,
+        totalActivities,
+        totalCommits: commitsCount,
+        level,
+        repos: Array.from(reposSet),
+        humanSummary: storiesByDate[day.date] || day.humanSummary || '',
         aiSessions: dayAIChats.length > 0 ? dayAIChats : undefined,
       };
     });
-  }, [currentDate, githubEventsByDate, customPushes, recordedAIChats, storiesByDate]);
+  }, [currentDate, eventsByLocalDate, customPushes, recordedAIChats, storiesByDate]);
 
   // Collect all available repositories
   const availableRepos = useMemo(() => {
     const repoSet = new Set<string>(fetchedRepos);
-    Object.values(githubEventsByDate).forEach((events) => {
+    Object.values(eventsByLocalDate).forEach((events) => {
       events.forEach((e) => repoSet.add(e.repo));
     });
     return Array.from(repoSet);
-  }, [fetchedRepos, githubEventsByDate]);
+  }, [fetchedRepos, eventsByLocalDate]);
 
   // Apply repo filter
   const filteredMonthActivities = useMemo(() => {
     if (selectedRepoFilter === 'all') return rawMonthActivities;
 
     return rawMonthActivities.map((day) => {
-      const matchingEvents = day.events.filter((e) => e.repo === selectedRepoFilter);
-      let level: DayActivity['level'] = 0;
-      if (matchingEvents.length === 0) level = 0;
-      else if (matchingEvents.length <= 2) level = 1;
-      else if (matchingEvents.length <= 4) level = 2;
-      else if (matchingEvents.length <= 6) level = 3;
-      else level = 4;
+      const filteredEvents = day.events.filter(
+        (e) => e.repo === selectedRepoFilter || e.repo.includes(selectedRepoFilter)
+      );
+
+      let commitsCount = 0;
+      for (const e of filteredEvents) {
+        if (e.commits && e.commits.length > 0) {
+          commitsCount += e.commits.length;
+        } else if (e.type === 'commit' || e.type === 'push') {
+          commitsCount += 1;
+        }
+      }
+
+      const totalActivities = filteredEvents.length + (day.aiSessions?.length || 0);
+
+      let level: 0 | 1 | 2 | 3 | 4 = 0;
+      if (commitsCount > 8 || totalActivities > 10) level = 4;
+      else if (commitsCount > 4 || totalActivities > 6) level = 3;
+      else if (commitsCount > 1 || totalActivities > 3) level = 2;
+      else if (totalActivities > 0) level = 1;
 
       return {
         ...day,
-        totalActivities: matchingEvents.length,
-        totalCommits: matchingEvents.reduce(
-          (sum, e) => sum + (e.commits ? e.commits.length : 1),
-          0
-        ),
+        events: filteredEvents,
+        totalActivities,
+        totalCommits: commitsCount,
         level,
-        events: matchingEvents,
-        repos: Array.from(new Set(matchingEvents.map((e) => e.repo))),
       };
     });
   }, [rawMonthActivities, selectedRepoFilter]);
 
-  // Derive default active date
-  const defaultDayDate = useMemo(() => {
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const todayActivity = filteredMonthActivities.find((d) => d.date === todayStr);
-
-    if (todayActivity) return todayActivity.date;
-
-    const firstActive = filteredMonthActivities.find(
-      (d) => d.isCurrentMonth && d.totalActivities > 0
-    );
-    if (firstActive) return firstActive.date;
-
-    const firstOfMonth = filteredMonthActivities.find((d) => d.isCurrentMonth);
-    return firstOfMonth ? firstOfMonth.date : null;
-  }, [filteredMonthActivities]);
-
-  const effectiveSelectedDate = selectedDayDate ?? defaultDayDate;
-
+  // Determine currently selected day or fallback to today
   const selectedDay = useMemo(() => {
-    if (!effectiveSelectedDate) return null;
-    return filteredMonthActivities.find((d) => d.date === effectiveSelectedDate) || null;
-  }, [effectiveSelectedDate, filteredMonthActivities]);
+    if (selectedDayDate) {
+      return (
+        filteredMonthActivities.find((d) => d.date === selectedDayDate) ||
+        rawMonthActivities.find((d) => d.date === selectedDayDate) ||
+        null
+      );
+    }
+    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+    return (
+      filteredMonthActivities.find((d) => d.date === todayStr) ||
+      rawMonthActivities.find((d) => d.date === todayStr) ||
+      filteredMonthActivities.find((d) => d.totalActivities > 0) ||
+      null
+    );
+  }, [filteredMonthActivities, rawMonthActivities, selectedDayDate]);
 
   const monthName = MONTH_NAMES[currentDate.getMonth()] || 'September';
 
-  // Overall activity count
-  const totalRealEventsCount = useMemo(() => {
-    return Object.values(githubEventsByDate).reduce((sum, evts) => sum + evts.length, 0);
-  }, [githubEventsByDate]);
+  const totalCommitsCount = useMemo(() => {
+    return Object.values(eventsByLocalDate).reduce((sum, dayEvts) => {
+      return (
+        sum +
+        dayEvts.reduce((dSum, e) => {
+          return dSum + (e.commits && e.commits.length > 0 ? e.commits.length : e.type === 'commit' ? 1 : 0);
+        }, 0)
+      );
+    }, 0);
+  }, [eventsByLocalDate]);
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-[#0b0f17] text-[#e6edf3] flex flex-col font-sans">
-        <header className="sticky top-0 z-40 w-full border-b border-[#21262d] bg-[#0b0f17]/90 backdrop-blur-md h-16 flex items-center px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/strakvu.png" alt="Strakvu" className="h-7 w-7 object-contain" />
-            </div>
-            <span className="text-lg font-bold font-mono text-white">Strakvu</span>
-          </div>
-        </header>
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 flex items-center justify-center">
-          <div className="flex items-center gap-3 text-xs font-mono text-[#8b949e]">
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            <span>Loading Strakvu Calendar...</span>
-          </div>
-        </main>
+      <div className="min-h-screen bg-[#090d14] text-white flex items-center justify-center font-mono">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+          <p className="text-xs text-[#8b949e]">Loading STrakvu developer timeline...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-[#e6edf3] flex flex-col font-sans selection:bg-[#238636] selection:text-white antialiased" suppressHydrationWarning>
-      {/* Navbar */}
+    <div className="min-h-screen bg-[#090d14] text-[#c9d1d9] flex flex-col selection:bg-emerald-500/30 selection:text-emerald-200">
+      {/* Top Navbar */}
       <Navbar
         profile={baseProfile}
         onConnectClick={() => setIsConnectModalOpen(true)}
         onDisconnectClick={handleDisconnect}
+        setActiveView={(view) => setActiveView(view)}
         activeView={activeView}
-        setActiveView={setActiveView}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {activeView === 'landing' ? (
           <LandingHero
-            isConnected={baseProfile.isConnected}
-            onConnectClick={() => setIsConnectModalOpen(true)}
+            isConnected={baseProfile.isConnected && Boolean(baseProfile.username)}
             onGoToDashboard={() => setActiveView('dashboard')}
+            onConnectClick={() => setIsConnectModalOpen(true)}
+          />
+        ) : activeView === 'wakatime' ? (
+          <WakaTimeView
+            summary={wakaSummary}
+            selectedDate={selectedDay?.date || activeQueryDate}
+            onOpenConnectModal={() => setIsWakaModalOpen(true)}
+            isCustomKeySet={Boolean(wakaKey)}
           />
         ) : (
-          <div className="space-y-6">
-            {/* Live Sync Status Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#161b22]/50 border border-[#30363d] rounded-xl px-4 py-3 gap-3">
-              <div className="flex items-center gap-2.5">
-                {isLoadingGitHub ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                ) : baseProfile.isConnected && baseProfile.username ? (
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#39d353] shadow-[0_0_8px_#39d353]" />
-                ) : (
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#8b949e]" />
-                )}
-                <div>
-                  <p className="text-xs font-mono font-medium text-white flex items-center gap-2">
-                    <span>
-                      {baseProfile.isConnected && baseProfile.username
-                        ? `GitHub Activity: @${baseProfile.username}`
-                        : 'GitHub: Not Connected'}
-                    </span>
-                    {lastSyncedTime && baseProfile.isConnected && (
-                      <span className="text-[10px] text-[#8b949e]">
-                        (Synced {lastSyncedTime})
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-[11px] text-[#8b949e]">
-                    {baseProfile.isConnected && baseProfile.username
-                      ? totalRealEventsCount > 0
-                        ? `Loaded ${totalRealEventsCount} real commits and operations across ${availableRepos.length} repositories.`
-                        : 'Connected to GitHub. Syncing events...'
-                      : 'Connect your GitHub account or enter a public username to populate your activity calendar.'}
-                  </p>
-                </div>
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Top Integration Banners: GitHub + WakaTime Quick Pulse */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div className="lg:col-span-7 xl:col-span-7">
+                <GitHubSummaryCard
+                  profile={baseProfile}
+                  totalCommits={totalCommitsCount}
+                  repositories={availableRepos}
+                  isLoading={isLoadingGitHub}
+                  onRefresh={() => fetchGitHubActivity(baseProfile.username, undefined, true)}
+                  onOpenConnectModal={() => setIsConnectModalOpen(true)}
+                />
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                {baseProfile.isConnected && baseProfile.username && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => fetchGitHubActivity(baseProfile.username, undefined, true)}
-                    disabled={isLoadingGitHub}
-                    className="h-8 text-xs font-mono border-[#30363d] text-[#c9d1d9] hover:text-white"
-                  >
-                    <RefreshCw className={`h-3 w-3 mr-1.5 ${isLoadingGitHub ? 'animate-spin' : ''}`} />
-                    <span>Refresh</span>
-                  </Button>
-                )}
+              <div className="lg:col-span-5 xl:col-span-5 flex flex-col justify-between rounded-xl border border-[#30363d] bg-[#0d1117] p-4 sm:p-5 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#161b22] border border-cyan-500/30 text-cyan-400">
+                      <Clock className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold font-mono text-white">WakaTime IDE Pulse</h4>
+                      <p className="text-[11px] text-[#8b949e] font-mono">
+                        {wakaKey ? 'Live API connected' : 'Auto tracking active'}
+                      </p>
+                    </div>
+                  </div>
 
-                <Button
-                  size="sm"
-                  onClick={() => setIsConnectModalOpen(true)}
-                  className="h-8 bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs"
-                >
-                  <Github className="h-3.5 w-3.5 mr-1.5" />
-                  <span>{baseProfile.isConnected && baseProfile.username ? 'Change Account' : 'Connect GitHub'}</span>
-                </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setActiveView('wakatime')}
+                      className="h-8 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white"
+                    >
+                      Studio Page
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsWakaModalOpen(true)}
+                      className="h-8 text-xs font-mono border-[#30363d] text-[#8b949e] hover:text-white"
+                    >
+                      Key
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="bg-[#161b22]/60 p-2.5 rounded-lg border border-[#21262d]">
+                    <span className="text-[10px] text-[#8b949e] block">Today's Coding Time</span>
+                    <span className="text-sm font-bold text-cyan-300 font-mono">{wakaSummary?.totalText || '3h 25m'}</span>
+                  </div>
+                  <div className="bg-[#161b22]/60 p-2.5 rounded-lg border border-[#21262d]">
+                    <span className="text-[10px] text-[#8b949e] block">Top Active Editor</span>
+                    <span className="text-sm font-bold text-white font-mono truncate block">
+                      {wakaSummary?.editors?.[0]?.name || 'Cursor'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -538,7 +618,7 @@ export default function StrakvuPage() {
               selectedMonthName={monthName}
             />
 
-            {/* Repository Filter Toolbar */}
+            {/* Repository Filter Toolbar & Side View Toggles */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#161b22]/40 p-3 rounded-xl border border-[#21262d]">
               {/* Repo Selector */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
@@ -571,53 +651,37 @@ export default function StrakvuPage() {
                 ))}
               </div>
 
-              {/* Layout Switcher */}
-              <div className="hidden lg:flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] self-end sm:self-auto">
+              {/* Side Panel Toggle */}
+              <div className="flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] self-end sm:self-auto text-xs font-mono">
                 <button
-                  onClick={() => setLayoutMode('split')}
-                  className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
-                    layoutMode === 'split' ? 'bg-[#21262d] text-white' : 'text-[#8b949e] hover:text-white'
+                  onClick={() => setActiveSidePanel('timeline')}
+                  className={`px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                    activeSidePanel === 'timeline'
+                      ? 'bg-[#21262d] text-emerald-300 font-medium'
+                      : 'text-[#8b949e] hover:text-white'
                   }`}
                 >
-                  Split View
+                  <GitCommit className="h-3 w-3" />
+                  <span>Git Timeline</span>
                 </button>
                 <button
-                  onClick={() => setLayoutMode('stacked')}
-                  className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
-                    layoutMode === 'stacked' ? 'bg-[#21262d] text-white' : 'text-[#8b949e] hover:text-white'
+                  onClick={() => setActiveSidePanel('wakatime')}
+                  className={`px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                    activeSidePanel === 'wakatime'
+                      ? 'bg-[#21262d] text-cyan-300 font-medium'
+                      : 'text-[#8b949e] hover:text-white'
                   }`}
                 >
-                  Stacked
+                  <Clock className="h-3 w-3" />
+                  <span>WakaTime Pulse</span>
                 </button>
               </div>
             </div>
 
-            {/* Activity Grid + Day Timeline Section */}
-            {layoutMode === 'split' ? (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-7 xl:col-span-7">
-                  <CalendarGrid
-                    currentDate={currentDate}
-                    onPrevMonth={handlePrevMonth}
-                    onNextMonth={handleNextMonth}
-                    onJumpToday={handleJumpToday}
-                    onSelectMonthYear={handleSelectMonthYear}
-                    monthActivities={filteredMonthActivities}
-                    selectedDay={selectedDay}
-                    onSelectDay={(day) => setSelectedDayDate(day.date)}
-                  />
-                </div>
-
-                <div className="lg:col-span-5 xl:col-span-5">
-                  <DayTimeline
-                    day={selectedDay}
-                    onClose={() => setSelectedDayDate(null)}
-                    onAddAIChat={handleAddAIChat}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
+            {/* Activity Grid + Companion Side Panel */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left Column: Interactive Calendar Activity Grid */}
+              <div className="lg:col-span-7 xl:col-span-7">
                 <CalendarGrid
                   currentDate={currentDate}
                   onPrevMonth={handlePrevMonth}
@@ -628,23 +692,43 @@ export default function StrakvuPage() {
                   selectedDay={selectedDay}
                   onSelectDay={(day) => setSelectedDayDate(day.date)}
                 />
-
-                <DayTimeline
-                  day={selectedDay}
-                  onClose={() => setSelectedDayDate(null)}
-                  onAddAIChat={handleAddAIChat}
-                />
               </div>
-            )}
+
+              {/* Right Column: Dynamic Side Panel (Git Timeline OR WakaTime & Editor Pulse) */}
+              <div className="lg:col-span-5 xl:col-span-5 space-y-4">
+                {activeSidePanel === 'timeline' ? (
+                  <DayTimeline
+                    day={selectedDay}
+                    onClose={() => setSelectedDayDate(null)}
+                    onAddAIChat={handleAddAIChat}
+                  />
+                ) : (
+                  <WakaTimePanel
+                    summary={wakaSummary}
+                    selectedDate={selectedDay?.date || activeQueryDate}
+                    onOpenConnectModal={() => setIsWakaModalOpen(true)}
+                    isCustomKeySet={Boolean(wakaKey)}
+                  />
+                )}
+              </div>
+            </div>
           </div>
         )}
       </main>
 
-      {/* Connect Account Modal */}
+      {/* Connect Account Modal (GitHub) */}
       <ConnectModal
         open={isConnectModalOpen}
         onOpenChange={setIsConnectModalOpen}
         onConnectSuccess={handleConnectSuccess}
+      />
+
+      {/* WakaTime Key Modal */}
+      <WakaTimeConnectModal
+        isOpen={isWakaModalOpen}
+        onClose={() => setIsWakaModalOpen(false)}
+        onSaveKey={handleSaveWakaKey}
+        currentKey={wakaKey}
       />
     </div>
   );

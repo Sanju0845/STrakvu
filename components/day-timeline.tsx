@@ -27,7 +27,7 @@ import {
 import { DayActivity, ActivityEvent, AIChatSession } from '@/types/activity';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { cn, formatDayTitle } from '@/lib/utils';
+import { cn, formatDayTitle, formatExactTime, formatExactDateTimeWithZone } from '@/lib/utils';
 
 interface DayTimelineProps {
   day: DayActivity | null;
@@ -56,7 +56,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
         </div>
         <h3 className="text-sm font-semibold font-mono text-white">Select a Day</h3>
         <p className="text-xs text-[#8b949e] mt-1 max-w-sm mx-auto">
-          Click any date on the calendar above to inspect the complete commit logs and developer events for that day.
+          Click any date on the calendar to inspect the exact commits, timestamps, and activity history for that day.
         </p>
       </div>
     );
@@ -88,7 +88,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
         promptTopic: promptTopic.trim(),
         aiResponseSummary: aiSummary.trim() || 'Custom brainstorm session and prompt exploration',
         codeSnippet: codeSnippet.trim() || undefined,
-        targetRepo: targetRepo.trim() || (day.repos[0] || 'sanjayanand/strakvu'),
+        targetRepo: targetRepo.trim() || (day.repos[0] || 'strakvu'),
         tags: [chatSource.toUpperCase(), 'Development'],
       });
     }
@@ -134,7 +134,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
             <p className="text-xs text-[#8b949e] font-mono mt-0.5">
               {day.totalActivities === 0
                 ? 'No code activity logged'
-                : `${totalCommitsCount} real commit${totalCommitsCount === 1 ? '' : 's'} across ${day.repos.length} repo${day.repos.length === 1 ? '' : 's'} · ${aiCount} AI prompt${aiCount === 1 ? '' : 's'}`}
+                : `${totalCommitsCount} commit${totalCommitsCount === 1 ? '' : 's'} across ${day.repos.length} repo${day.repos.length === 1 ? '' : 's'} · ${aiCount} AI prompt${aiCount === 1 ? '' : 's'}`}
             </p>
           </div>
 
@@ -158,97 +158,82 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
           </div>
         </div>
 
-        {/* Developer Story · What was built on that date */}
-        {day.humanSummary ? (
-          <div className="mt-4 p-3.5 rounded-lg border border-emerald-900/40 bg-emerald-950/20 text-xs text-[#e6edf3] font-sans leading-relaxed">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-medium text-[11px] mb-1">
-              <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Developer Story · What was built on this date</span>
+        {/* Human story summary */}
+        {day.humanSummary && (
+          <div className="mt-3 rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-3.5 py-2.5 text-xs text-emerald-200/90 font-mono leading-relaxed flex items-start gap-2">
+            <Sparkles className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <span className="font-semibold text-emerald-400">Day Summary: </span>
+              <span>{day.humanSummary}</span>
             </div>
-            <p className="text-[#c9d1d9] leading-relaxed font-sans">{day.humanSummary}</p>
           </div>
-        ) : null}
+        )}
 
-        {/* Tooling Filter Tabs */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#21262d]/60">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        {/* Tab switcher & Action bar */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#21262d] pt-3">
+          <div className="flex items-center gap-1.5 text-xs font-mono">
             <button
               onClick={() => setActiveTab('all')}
               className={cn(
-                'px-2.5 py-1 rounded-md text-xs font-mono transition-colors whitespace-nowrap',
+                'px-2.5 py-1 rounded-md transition-colors',
                 activeTab === 'all'
-                  ? 'bg-[#21262d] border border-[#30363d] text-white font-medium'
+                  ? 'bg-[#21262d] text-white font-medium'
                   : 'text-[#8b949e] hover:text-white'
               )}
             >
-              Unified Stream
+              All ({ghCount + aiCount + chromeCount})
             </button>
+
             <button
               onClick={() => setActiveTab('github')}
               className={cn(
-                'px-2.5 py-1 rounded-md text-xs font-mono transition-colors whitespace-nowrap flex items-center gap-1.5',
+                'px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors',
                 activeTab === 'github'
-                  ? 'bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-medium'
+                  ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/60'
                   : 'text-[#8b949e] hover:text-white'
               )}
             >
-              <GitCommit className="h-3 w-3 text-emerald-400" />
-              <span>GitHub Commits ({ghCount})</span>
+              <GitCommit className="h-3 w-3" />
+              <span>Git ({ghCount})</span>
             </button>
+
             <button
               onClick={() => setActiveTab('ai')}
               className={cn(
-                'px-2.5 py-1 rounded-md text-xs font-mono transition-colors whitespace-nowrap flex items-center gap-1.5',
+                'px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors',
                 activeTab === 'ai'
-                  ? 'bg-purple-950/80 border border-purple-700/60 text-purple-300 font-medium'
+                  ? 'bg-purple-950/60 text-purple-300 border border-purple-800/60'
                   : 'text-[#8b949e] hover:text-white'
               )}
             >
-              <Bot className="h-3 w-3 text-purple-400" />
+              <Bot className="h-3 w-3" />
               <span>AI Prompts ({aiCount})</span>
             </button>
-            {chromeCount > 0 && (
-              <button
-                onClick={() => setActiveTab('chrome')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md text-xs font-mono transition-colors whitespace-nowrap flex items-center gap-1.5',
-                  activeTab === 'chrome'
-                    ? 'bg-sky-950/80 border border-sky-700/60 text-sky-300 font-medium'
-                    : 'text-[#8b949e] hover:text-white'
-                )}
-              >
-                <Compass className="h-3 w-3 text-sky-400" />
-                <span>Research ({chromeCount})</span>
-              </button>
-            )}
           </div>
 
-          {/* Action button */}
-          <div className="flex items-center gap-2 ml-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsAddingChat(!isAddingChat)}
-              className="h-7 px-2.5 text-xs font-mono border-[#30363d] bg-[#0d1117] text-purple-300 hover:text-white hover:bg-purple-950/40"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              <span>Log AI Prompt</span>
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsAddingChat(!isAddingChat)}
+            className="h-7 text-xs font-mono border-[#30363d] text-purple-300 hover:text-white hover:border-purple-500"
+          >
+            <Plus className="h-3 w-3 mr-1 text-purple-400" />
+            <span>Log AI Prompt</span>
+          </Button>
         </div>
       </div>
 
-      {/* Paste AI Chat Quick Form Drawer */}
+      {/* Add AI Chat Form Modal/Inline */}
       {isAddingChat && (
         <form
           onSubmit={handleSubmitAIChat}
-          className="border-b border-[#21262d] bg-[#0b0f17] p-4 space-y-3 animate-in fade-in-0 duration-150"
+          className="border-b border-[#21262d] bg-[#161b22]/90 p-4 space-y-3 animate-in slide-in-from-top-2 duration-150"
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-mono text-purple-400 font-semibold">
-              <Bot className="h-3.5 w-3.5" />
-              <span>Log AI Prompts for this Date ({day.date})</span>
-            </div>
+            <span className="text-xs font-mono font-semibold text-purple-300 flex items-center gap-1.5">
+              <Bot className="h-3.5 w-3.5 text-purple-400" />
+              <span>Save AI Prompt Context for this Day</span>
+            </span>
             <button
               type="button"
               onClick={() => setIsAddingChat(false)}
@@ -258,40 +243,27 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
-                Source AI Tool
-              </label>
-              <select
-                value={chatSource}
-                onChange={(e) => setChatSource(e.target.value as any)}
-                className="w-full rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-purple-500"
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {(['claude', 'chatgpt', 'gemini', 'cursor'] as const).map((src) => (
+              <button
+                key={src}
+                type="button"
+                onClick={() => setChatSource(src)}
+                className={cn(
+                  'py-1.5 px-2 text-xs font-mono rounded-lg border capitalize text-center transition-colors',
+                  chatSource === src
+                    ? 'border-purple-500 bg-purple-950/50 text-purple-200 font-medium'
+                    : 'border-[#30363d] bg-[#0d1117] text-[#8b949e] hover:text-white'
+                )}
               >
-                <option value="claude">Claude (Anthropic)</option>
-                <option value="chatgpt">ChatGPT (OpenAI)</option>
-                <option value="gemini">Gemini (Google)</option>
-                <option value="cursor">Cursor / Qoder / IDE</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
-                Related Repository / Project
-              </label>
-              <input
-                type="text"
-                value={targetRepo}
-                onChange={(e) => setTargetRepo(e.target.value)}
-                placeholder={day.repos[0] || 'sanjayanand/strakvu'}
-                className="w-full rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-purple-500"
-              />
-            </div>
+                {src}
+              </button>
+            ))}
           </div>
 
           <div>
             <label className="text-[10px] font-mono text-[#8b949e] block mb-1">
-              What did you ask the AI? (Prompt or Goal)
+              What did you ask AI / prompt topic?
             </label>
             <input
               type="text"
@@ -349,7 +321,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
               No activity on this day
             </h4>
             <p className="mt-1 text-xs text-[#8b949e] max-w-sm mx-auto font-sans leading-relaxed">
-              No GitHub events or code pushes found for this date.
+              No GitHub events or code pushes recorded for this date.
             </p>
           </div>
         ) : (
@@ -375,7 +347,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                           </Badge>
                           <span className="text-[#8b949e] text-[11px] flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            {session.time}
+                            <span>{formatExactTime(session.timestamp, session.time)}</span>
                           </span>
                         </div>
                         {session.targetRepo && (
@@ -427,6 +399,9 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                       ? `${evt.repoUrl}/commit/${evt.hash}`
                       : `https://github.com/${evt.repo}/commit/${evt.hash}`;
 
+                    const exactTimeDisplay = formatExactTime(evt.timestamp, evt.time);
+                    const exactFullTimestamp = formatExactDateTimeWithZone(evt.timestamp);
+
                     return (
                       <div key={evt.id} className="relative pl-6 sm:pl-7 group">
                         {/* Timeline Node Icon */}
@@ -455,9 +430,12 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono mb-1.5">
                             <div className="flex items-center gap-2">
                               {/* Exact timestamp */}
-                              <span className="flex items-center gap-1 text-[#8b949e] font-mono text-[11px]">
-                                <Clock className="h-3 w-3" />
-                                <span>{evt.time}</span>
+                              <span
+                                className="flex items-center gap-1 text-[#8b949e] font-mono text-[11px] hover:text-white transition-colors cursor-help"
+                                title={exactFullTimestamp || exactTimeDisplay}
+                              >
+                                <Clock className="h-3 w-3 text-emerald-400" />
+                                <span className="font-semibold text-white">{exactTimeDisplay}</span>
                               </span>
 
                               <span className="text-[#484f58]">·</span>
@@ -561,11 +539,12 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                                     const subCommitUrl = sub.repoUrl
                                       ? `${sub.repoUrl}/commit/${sub.hash}`
                                       : `https://github.com/${sub.repo}/commit/${sub.hash}`;
+                                    const subTimeDisplay = formatExactTime(sub.timestamp, sub.time);
 
                                     return (
                                       <div
                                         key={sub.id}
-                                        className="flex items-center justify-between text-xs font-mono gap-2 py-0.5 hover:bg-[#21262d]/40 rounded px-1"
+                                        className="flex items-center justify-between text-xs font-mono gap-2 py-1 hover:bg-[#21262d]/40 rounded px-1"
                                       >
                                         <div className="flex items-center gap-2 min-w-0">
                                           <code className="text-[#58a6ff] text-[11px] shrink-0">
@@ -575,15 +554,20 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                                             {sub.message}
                                           </span>
                                         </div>
-                                        <a
-                                          href={subCommitUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-[#8b949e] hover:text-emerald-400 shrink-0"
-                                          title="View commit on GitHub"
-                                        >
-                                          <ExternalLink className="h-3 w-3" />
-                                        </a>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="text-[10px] text-[#8b949e]">
+                                            {subTimeDisplay}
+                                          </span>
+                                          <a
+                                            href={subCommitUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-[#8b949e] hover:text-emerald-400"
+                                            title="View commit on GitHub"
+                                          >
+                                            <ExternalLink className="h-3 w-3" />
+                                          </a>
+                                        </div>
                                       </div>
                                     );
                                   })}
@@ -624,7 +608,7 @@ export function DayTimeline({ day, onClose, onAddAIChat }: DayTimelineProps) {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-[#8b949e]">
-                          {item.time}
+                          {formatExactTime(item.timestamp, item.time)}
                         </span>
                         <ExternalLink className="h-3 w-3 text-[#8b949e] group-hover:text-white" />
                       </div>

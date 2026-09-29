@@ -20,6 +20,7 @@ export interface ChromeResearchItem {
   url: string;
   category: 'docs' | 'ui-inspiration' | 'npm' | 'stackoverflow' | 'spec';
   time: string;
+  timestamp?: string;
 }
 
 export interface CommitDetail {

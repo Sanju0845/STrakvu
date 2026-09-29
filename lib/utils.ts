@@ -38,3 +38,64 @@ export function formatDayTitle(dateStr: string): string {
   const monthName = MONTH_SHORT[dt.getUTCMonth()];
   return `${dayName}, ${monthName} ${d}, ${y}`;
 }
+
+/**
+ * Formats an ISO 8601 timestamp with pinpoint accuracy into the user's local timezone.
+ * Returns exact 12-hour format with hours, minutes, and seconds (e.g., "12:45:10 PM")
+ */
+export function formatExactTime(timestamp?: string, fallback?: string): string {
+  if (!timestamp) return fallback || '';
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return fallback || '';
+    return d.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return fallback || '';
+  }
+}
+
+/**
+ * Returns the exact full date and time with local timezone code for tooltip or detail view
+ * e.g. "Sep 25, 2026 at 12:45:10 PM PDT"
+ */
+export function formatExactDateTimeWithZone(timestamp?: string): string {
+  if (!timestamp) return '';
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    });
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Converts an ISO timestamp to local YYYY-MM-DD matching the user's actual browser date
+ */
+export function getLocalDateKey(timestamp?: string): string {
+  if (!timestamp) return '';
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  } catch {
+    return '';
+  }
+}

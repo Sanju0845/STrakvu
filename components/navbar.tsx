@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import { GitCommit, Github, CheckCircle2, ChevronDown, LogOut, ArrowRight, Loader2 } from 'lucide-react';
+import { GitCommit, Github, CheckCircle2, ChevronDown, LogOut, ArrowRight, Loader2, Clock, Calendar, Info } from 'lucide-react';
 import { DeveloperProfile } from '@/types/activity';
 import { Button } from './ui/button';
 
@@ -10,8 +10,8 @@ interface NavbarProps {
   profile: DeveloperProfile;
   onConnectClick: () => void;
   onDisconnectClick: () => void;
-  activeView: 'dashboard' | 'landing';
-  setActiveView: (view: 'dashboard' | 'landing') => void;
+  activeView: 'dashboard' | 'wakatime' | 'landing';
+  setActiveView: (view: 'dashboard' | 'wakatime' | 'landing') => void;
 }
 
 export function Navbar({
@@ -42,15 +42,11 @@ export function Navbar({
     }
   };
 
-  const handleDirectConnect = () => {
-    onConnectClick();
-  };
-
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#21262d] bg-[#0b0f17]/90 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Brand */}
-        <div className="flex items-center gap-4">
+        {/* Brand & Main Nav Links */}
+        <div className="flex items-center gap-4 sm:gap-6">
           <button
             onClick={() => setActiveView('dashboard')}
             className="flex items-center gap-2.5 text-left group transition-transform active:scale-98"
@@ -62,7 +58,6 @@ export function Navbar({
                 alt="Strakvu Logo"
                 className="h-7 w-7 object-contain"
                 onError={(e) => {
-                  // Fallback to git icon if image fails
                   e.currentTarget.style.display = 'none';
                 }}
               />
@@ -82,27 +77,43 @@ export function Navbar({
             </div>
           </button>
 
-          {/* Quick tab switcher (Dashboard vs Landing preview) */}
-          <nav className="hidden md:flex items-center ml-4 pl-4 border-l border-[#21262d] gap-1">
+          {/* Nav Tabs Switcher */}
+          <nav className="flex items-center ml-2 sm:ml-4 pl-2 sm:pl-4 border-l border-[#21262d] gap-1 sm:gap-1.5">
             <button
               onClick={() => setActiveView('dashboard')}
-              className={`px-3 py-1.5 rounded-md text-xs font-mono transition-colors ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-mono transition-colors flex items-center gap-1.5 ${
                 activeView === 'dashboard'
-                  ? 'bg-[#161b22] text-white border border-[#30363d]'
-                  : 'text-[#8b949e] hover:text-white'
+                  ? 'bg-[#161b22] text-white border border-[#30363d] shadow-sm font-semibold'
+                  : 'text-[#8b949e] hover:text-white hover:bg-[#161b22]/40'
               }`}
             >
-              Activity Grid
+              <Calendar className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Activity Grid</span>
             </button>
+
+            <button
+              onClick={() => setActiveView('wakatime')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-mono transition-colors flex items-center gap-1.5 ${
+                activeView === 'wakatime'
+                  ? 'bg-cyan-950/50 text-cyan-300 border border-cyan-800/60 shadow-sm font-semibold'
+                  : 'text-[#8b949e] hover:text-white hover:bg-[#161b22]/40'
+              }`}
+            >
+              <Clock className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">WakaTime Studio</span>
+              <span className="sm:hidden">WakaTime</span>
+            </button>
+
             <button
               onClick={() => setActiveView('landing')}
-              className={`px-3 py-1.5 rounded-md text-xs font-mono transition-colors ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-mono transition-colors flex items-center gap-1.5 ${
                 activeView === 'landing'
-                  ? 'bg-[#161b22] text-white border border-[#30363d]'
-                  : 'text-[#8b949e] hover:text-white'
+                  ? 'bg-[#161b22] text-white border border-[#30363d] shadow-sm font-semibold'
+                  : 'text-[#8b949e] hover:text-white hover:bg-[#161b22]/40'
               }`}
             >
-              About
+              <Info className="h-3.5 w-3.5 text-purple-400" />
+              <span>About</span>
             </button>
           </nav>
         </div>
@@ -159,7 +170,7 @@ export function Navbar({
                       </p>
                       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>{isSessionAuth ? 'GitHub OAuth Active' : 'Connected via Username'}</span>
+                        <span>{isSessionAuth ? 'GitHub OAuth Active' : 'Connected via Token'}</span>
                       </div>
                     </div>
 
@@ -171,7 +182,16 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-[#c9d1d9] hover:bg-[#21262d] hover:text-white font-mono transition-colors"
                       >
-                        Activity Dashboard
+                        Activity Grid
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDropdown(false);
+                          setActiveView('wakatime');
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-[#c9d1d9] hover:bg-[#21262d] hover:text-white font-mono transition-colors"
+                      >
+                        WakaTime Studio
                       </button>
                       <button
                         onClick={() => {
@@ -180,14 +200,14 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-[#c9d1d9] hover:bg-[#21262d] hover:text-white font-mono transition-colors"
                       >
-                        About & Integration
+                        About & Features
                       </button>
                       <button
                         onClick={handleSignOut}
-                        className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-red-400 hover:bg-red-950/30 hover:text-red-300 font-mono transition-colors flex items-center gap-1.5"
+                        className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 font-mono transition-colors flex items-center gap-1.5 border-t border-[#21262d] mt-1 pt-2"
                       >
                         <LogOut className="h-3.5 w-3.5" />
-                        <span>Sign Out / Disconnect</span>
+                        <span>Disconnect Account</span>
                       </button>
                     </div>
                   </div>
@@ -196,25 +216,14 @@ export function Navbar({
             </div>
           ) : (
             <Button
-              onClick={handleDirectConnect}
-              variant="default"
               size="sm"
-              className="bg-[#238636] hover:bg-[#2ea043] font-mono font-medium text-xs sm:text-sm px-3 sm:px-4"
+              onClick={onConnectClick}
+              className="h-8 bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs shadow-md"
             >
-              <Github className="h-4 w-4" />
+              <Github className="h-3.5 w-3.5 mr-1.5" />
               <span>Connect GitHub</span>
             </Button>
           )}
-
-          {/* Mobile nav toggle */}
-          <div className="flex md:hidden items-center">
-            <button
-              onClick={() => setActiveView(activeView === 'dashboard' ? 'landing' : 'dashboard')}
-              className="px-2.5 py-1.5 rounded-lg border border-[#30363d] bg-[#161b22] text-xs font-mono text-[#c9d1d9]"
-            >
-              {activeView === 'dashboard' ? 'About' : 'Grid'}
-            </button>
-          </div>
         </div>
       </div>
     </header>
