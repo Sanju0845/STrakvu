@@ -22,7 +22,6 @@ import { WakaTimeView } from '@/features/wakatime/components/wakatime-view';
 import { WakaTimeConnectModal } from '@/features/wakatime/components/wakatime-connect-modal';
 import { WakaTimeService, CustomEditorSession } from '@/features/wakatime/wakatime-service';
 import { WakaTimeDaySummary } from '@/features/wakatime/types';
-import { AIStudioView } from '@/features/ai-studio/components/ai-studio-view';
 
 const emptySubscribe = () => () => {};
 
@@ -71,8 +70,8 @@ export default function StrakvuPage() {
   const session = sessionHook?.data;
   const sessionStatus = sessionHook?.status || 'unauthenticated';
 
-  const [mounted, setMounted] = useState(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'wakatime' | 'aistudio' | 'landing'>('dashboard');
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const [activeView, setActiveView] = useState<'dashboard' | 'wakatime' | 'landing'>('dashboard');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
   const storedProfileRaw = useSyncExternalStore(
@@ -123,15 +122,13 @@ export default function StrakvuPage() {
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
   const [activeSidePanel, setActiveSidePanel] = useState<'timeline' | 'wakatime'>('timeline');
 
-  // Mark component mounted on client and parse URL view
+  // Parse URL view and stored key on mount
   useEffect(() => {
-    setMounted(true);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view');
       if (viewParam === 'landing') setActiveView('landing');
       else if (viewParam === 'wakatime') setActiveView('wakatime');
-      else if (viewParam === 'aistudio') setActiveView('aistudio');
 
       const storedWaka = WakaTimeService.getStoredApiKey();
       if (storedWaka) setWakaKey(storedWaka);
@@ -256,10 +253,10 @@ export default function StrakvuPage() {
   }, []);
 
   useEffect(() => {
-    if (mounted) {
+    if (isClient) {
       loadWakaTime(activeQueryDate, wakaKey);
     }
-  }, [mounted, activeQueryDate, wakaKey, loadWakaTime]);
+  }, [isClient, activeQueryDate, wakaKey, loadWakaTime]);
 
   const handleSaveWakaKey = (newKey: string) => {
     setWakaKey(newKey);
@@ -281,7 +278,7 @@ export default function StrakvuPage() {
   // Fetch once on mount or when session state transitions - automatic recovery for Vercel
   const hasInitialFetched = useRef(false);
   useEffect(() => {
-    if (!mounted) return;
+    if (!isClient) return;
 
     if (sessionStatus === 'authenticated' && session?.user) {
       // @ts-expect-error accessToken on session
@@ -302,7 +299,7 @@ export default function StrakvuPage() {
         fetchGitHubActivity(targetUser, storedToken);
       }
     }
-  }, [mounted, sessionStatus, session, baseProfile.username, fetchGitHubActivity]);
+  }, [isClient, sessionStatus, session, baseProfile.username, fetchGitHubActivity]);
 
   // Calendar navigation
   const handlePrevMonth = () => {
@@ -548,7 +545,7 @@ export default function StrakvuPage() {
     }, 0);
   }, [eventsByLocalDate]);
 
-  if (!mounted) {
+  if (!isClient) {
     return (
       <div className="min-h-screen bg-[#090d14] text-white flex items-center justify-center font-mono">
         <div className="flex flex-col items-center gap-3">
@@ -588,12 +585,6 @@ export default function StrakvuPage() {
               setSelectedDayDate(newDate);
               loadWakaTime(newDate, wakaKey);
             }}
-          />
-        ) : activeView === 'aistudio' ? (
-          <AIStudioView
-            selectedDate={selectedDay?.date || activeQueryDate}
-            onSelectDate={(newDate) => setSelectedDayDate(newDate)}
-            onOpenConnectModal={() => setIsConnectModalOpen(true)}
           />
         ) : (
           <div className="space-y-6 animate-in fade-in duration-200">
