@@ -549,7 +549,7 @@ export default function StrakvuPage() {
         aiSessions: dayAIChats.length > 0 ? dayAIChats : undefined,
       };
     });
-  }, [currentDate, eventsByLocalDate, customPushes, recordedAIChats, recordedEditorSessions, storiesByDate]);
+  }, [currentDate, eventsByLocalDate, customPushes, recordedAIChats, recordedEditorSessions, storiesByDate, wakaSummary]);
 
   // Collect all available repositories
   const availableRepos = useMemo(() => {

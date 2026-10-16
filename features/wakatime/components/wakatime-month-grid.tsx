@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Clock,
   Calendar,
   Flame,
@@ -22,6 +23,7 @@ interface WakaTimeMonthGridProps {
   onPrevMonth: () => void;
   onNextMonth: () => void;
   onJumpToday: () => void;
+  onSelectMonthYear?: (year: number, month: number) => void;
   monthDaysMap: Record<string, WakaTimeDaySummary>;
   selectedDate: string;
   onSelectDate: (date: string) => void;
@@ -34,6 +36,7 @@ export function WakaTimeMonthGrid({
   onPrevMonth,
   onNextMonth,
   onJumpToday,
+  onSelectMonthYear,
   monthDaysMap,
   selectedDate,
   onSelectDate,
@@ -41,6 +44,10 @@ export function WakaTimeMonthGrid({
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const monthName = MONTH_NAMES[month];
+
+  const [showYearPicker, setShowYearPicker] = React.useState(false);
+  const thisYear = new Date().getFullYear();
+  const years = Array.from({ length: thisYear - 2018 + 2 }, (_, i) => thisYear + 1 - i);
 
   // Build full calendar month grid (leading days + month days + trailing days)
   const calendarCells = useMemo(() => {
@@ -192,16 +199,78 @@ export function WakaTimeMonthGrid({
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#161b22] border border-cyan-500/40 text-cyan-400">
             <Calendar className="h-5 w-5" />
           </div>
-          <div>
-            <h3 className="text-base sm:text-lg font-bold font-mono text-white flex items-center gap-2">
-              <span>{monthName} {year}</span>
-              <span className="text-xs text-cyan-400 font-normal px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/60">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowYearPicker(!showYearPicker)}
+              className="flex items-center gap-2 group text-left"
+            >
+              <h3 className="text-base sm:text-lg font-bold font-mono text-white flex items-center gap-2 group-hover:text-cyan-300 transition-colors">
+                <span>{monthName} {year}</span>
+                <ChevronDown className="h-4 w-4 text-[#8b949e] group-hover:text-cyan-300 transition-colors" />
+              </h3>
+              <span className="text-xs text-cyan-400 font-normal px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/60 hidden sm:inline">
                 WakaTime Grid
               </span>
-            </h3>
+            </button>
             <p className="text-xs text-[#8b949e] font-mono mt-0.5">
               Daily coding duration & projects worked on
             </p>
+
+            {/* Year & Month Selection Popover */}
+            {showYearPicker && (
+              <div className="absolute top-full left-0 mt-2 z-50 w-64 sm:w-72 rounded-xl border border-[#30363d] bg-[#161b22] p-3 shadow-2xl space-y-3">
+                <div>
+                  <label className="text-[10px] font-mono uppercase text-[#8b949e] tracking-wider block mb-1.5">
+                    Select Month
+                  </label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {MONTH_NAMES.map((m, idx) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          onSelectMonthYear?.(year, idx);
+                          setShowYearPicker(false);
+                        }}
+                        className={`py-1 text-xs font-mono rounded transition-colors ${
+                          idx === month
+                            ? 'bg-cyan-600 text-white font-semibold'
+                            : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'
+                        }`}
+                      >
+                        {m.slice(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-[#30363d] pt-2">
+                  <label className="text-[10px] font-mono uppercase text-[#8b949e] tracking-wider block mb-1.5">
+                    Select Year
+                  </label>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    {years.map((y) => (
+                      <button
+                        key={y}
+                        type="button"
+                        onClick={() => {
+                          onSelectMonthYear?.(y, month);
+                          setShowYearPicker(false);
+                        }}
+                        className={`px-2.5 py-1 text-xs font-mono rounded shrink-0 transition-colors ${
+                          y === year
+                            ? 'bg-cyan-600 text-white font-semibold'
+                            : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'
+                        }`}
+                      >
+                        {y}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
