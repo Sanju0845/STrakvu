@@ -27,6 +27,7 @@ import {
   Flame,
   Activity,
   Code2,
+  RefreshCw,
 } from 'lucide-react';
 import { DayActivity, ActivityEvent, AIChatSession } from '@/types/activity';
 import { CustomEditorSession } from '@/features/wakatime/wakatime-service';
@@ -39,6 +40,8 @@ interface DayTimelineProps {
   onClose?: () => void;
   onAddAIChat?: (date: string, chat: Omit<AIChatSession, 'id' | 'timestamp' | 'time'>) => void;
   onAddEditorSession?: (session: CustomEditorSession) => void;
+  onRefreshWakaTime?: () => void;
+  isLoadingWakaTime?: boolean;
 }
 
 export function DayTimeline({
@@ -46,6 +49,8 @@ export function DayTimeline({
   onClose,
   onAddAIChat,
   onAddEditorSession,
+  onRefreshWakaTime,
+  isLoadingWakaTime,
 }: DayTimelineProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'github' | 'ide' | 'ai'>('all');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
@@ -520,15 +525,37 @@ export function DayTimeline({
                     <Laptop className="h-3.5 w-3.5" />
                     <span>IDE Coding Sessions</span>
                   </div>
-                  <Badge variant="outline" className="text-[10px] text-cyan-300 border-cyan-700">
-                    Total: {codingTime}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    {onRefreshWakaTime && (
+                      <button
+                        type="button"
+                        onClick={onRefreshWakaTime}
+                        disabled={isLoadingWakaTime}
+                        className="text-[11px] text-[#8b949e] hover:text-cyan-300 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#161b22]"
+                        title="Refresh live WakaTime activity"
+                      >
+                        <RefreshCw className={cn('h-3 w-3', isLoadingWakaTime && 'animate-spin text-cyan-400')} />
+                        <span className="hidden sm:inline">{isLoadingWakaTime ? 'Syncing...' : 'Sync'}</span>
+                      </button>
+                    )}
+                    <Badge variant="outline" className="text-[10px] text-cyan-300 border-cyan-700">
+                      Total: {codingTime}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="rounded-xl border border-cyan-900/40 bg-cyan-950/20 p-3.5 sm:p-4 hover:border-cyan-700/60 transition-colors">
                   <div className="flex items-center justify-between text-xs font-mono gap-2 mb-1.5">
                     <div className="flex items-center gap-2">
-                      <Badge variant="default" className="text-[10px] bg-cyan-700">
+                      <Badge
+                        variant="default"
+                        className={cn(
+                          'text-[10px]',
+                          (day.editorsUsed?.[0] || '').toLowerCase().includes('qoder')
+                            ? 'bg-emerald-600 text-white border-emerald-400/40'
+                            : 'bg-cyan-700 text-white border-cyan-500/40'
+                        )}
+                      >
                         {day.editorsUsed?.[0] || 'Active IDE'}
                       </Badge>
                       <span className="text-[#8b949e] text-[11px] flex items-center gap-1">

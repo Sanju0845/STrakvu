@@ -123,7 +123,7 @@ export function Navbar({
 
         {/* Right side Actions */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {status === 'loading' ? (
+          {status === 'loading' && !profile.username ? (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[#30363d] bg-[#161b22] text-xs font-mono text-[#8b949e]">
               <Loader2 className="h-3 w-3 animate-spin text-emerald-400" />
             </div>

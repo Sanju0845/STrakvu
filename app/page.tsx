@@ -10,7 +10,7 @@ import { StatsOverview } from '@/components/stats-overview';
 import { ConnectModal } from '@/components/connect-modal';
 import { INITIAL_DEVELOPER, getCleanMonthActivities } from '@/lib/mock-data';
 import { DayActivity, DeveloperProfile, AIChatSession, ActivityEvent } from '@/types/activity';
-import { MONTH_NAMES, getLocalDateKey, formatDate } from '@/lib/utils';
+import { MONTH_NAMES, getLocalDateKey, formatDate, cn } from '@/lib/utils';
 import { Filter, Github, GitCommit, RefreshCw, Loader2, CheckCircle2, AlertCircle, Layers, Clock, Laptop, Sparkles, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -144,6 +144,19 @@ export default function StrakvuPage() {
         if (parsed && parsed.username) return parsed;
       } catch {}
     }
+    if (typeof window !== 'undefined') {
+      try {
+        const storedUser = localStorage.getItem('strakvu_github_username');
+        if (storedUser) {
+          return {
+            ...INITIAL_DEVELOPER,
+            username: storedUser,
+            displayName: storedUser,
+            isConnected: true,
+          };
+        }
+      } catch {}
+    }
     return INITIAL_DEVELOPER;
   }, [profileOverride, storedProfileRaw]);
 
@@ -184,7 +197,7 @@ export default function StrakvuPage() {
   const isFetchingRef = useRef(false);
 
   const fetchGitHubActivity = useCallback(async (targetUsername?: string, token?: string, forceRefresh = false) => {
-    if (isFetchingRef.current) return;
+    if (isFetchingRef.current && !forceRefresh) return;
     isFetchingRef.current = true;
     setIsLoadingGitHub(true);
     setGithubFetchError(null);
@@ -202,7 +215,7 @@ export default function StrakvuPage() {
         throw new Error(data.error || 'Failed to fetch GitHub activity');
       }
 
-      if (data.eventsByDate) {
+      if (data.eventsByDate && Object.keys(data.eventsByDate).length > 0) {
         setGithubEventsByDate(data.eventsByDate);
       }
 
@@ -214,7 +227,23 @@ export default function StrakvuPage() {
         setFetchedRepos(data.repositories);
       }
 
-      if (data.profile) {
+      // Persist events to offline cache so calendar renders instantly on next visit
+      if (data.eventsByDate && Object.keys(data.eventsByDate).length > 0) {
+        try {
+          localStorage.setItem(
+            'strakvu_cached_events',
+            JSON.stringify({
+              eventsByDate: data.eventsByDate,
+              storiesByDate: data.storiesByDate || {},
+              repositories: data.repositories || [],
+              timestamp: Date.now(),
+            })
+          );
+        } catch {}
+      }
+
+      // ONLY update profile if a valid non-empty username was returned
+      if (data.profile && data.profile.username) {
         setProfileOverride((prev) => {
           const updated: DeveloperProfile = {
             ...(prev || INITIAL_DEVELOPER),
@@ -223,6 +252,7 @@ export default function StrakvuPage() {
           };
           try {
             localStorage.setItem('strakvu_profile', JSON.stringify(updated));
+            localStorage.setItem('strakvu_github_username', updated.username);
           } catch {}
           return updated;
         });
@@ -239,6 +269,7 @@ export default function StrakvuPage() {
   }, []);
 
   // Fetch WakaTime summary for active date
+  const [isLoadingWakaTime, setIsLoadingWakaTime] = useState(false);
   const activeQueryDate = useMemo(() => {
     if (selectedDayDate) return selectedDayDate;
     const today = new Date();
@@ -246,11 +277,20 @@ export default function StrakvuPage() {
   }, [selectedDayDate]);
 
   const loadWakaTime = useCallback(async (dateStr: string, key?: string) => {
-    const sum = await WakaTimeService.fetchDaySummary(dateStr, key);
-    if (sum) {
-      setWakaSummary(sum);
+    setIsLoadingWakaTime(true);
+    try {
+      const sum = await WakaTimeService.fetchDaySummary(dateStr, key);
+      if (sum) {
+        setWakaSummary(sum);
+      }
+    } finally {
+      setIsLoadingWakaTime(false);
     }
   }, []);
+
+  const handleRefreshWakaTime = useCallback(() => {
+    loadWakaTime(activeQueryDate, wakaKey);
+  }, [activeQueryDate, wakaKey, loadWakaTime]);
 
   useEffect(() => {
     if (isClient) {
@@ -275,10 +315,25 @@ export default function StrakvuPage() {
     loadWakaTime(session.date, wakaKey);
   };
 
-  // Fetch once on mount or when session state transitions - automatic recovery for Vercel
-  const hasInitialFetched = useRef(false);
+  // Restore cached GitHub activity immediately on mount so calendar is never empty
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedRaw = localStorage.getItem('strakvu_cached_events');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          if (cached.eventsByDate) setGithubEventsByDate(cached.eventsByDate);
+          if (cached.storiesByDate) setStoriesByDate(cached.storiesByDate);
+          if (cached.repositories) setFetchedRepos(cached.repositories);
+        }
+      } catch {}
+    }
+  }, []);
+
+  // Fetch once on mount or when session state transitions - automatic recovery across browser restarts
   useEffect(() => {
     if (!isClient) return;
+    if (sessionStatus === 'loading') return; // Wait for NextAuth to resolve
 
     if (sessionStatus === 'authenticated' && session?.user) {
       // @ts-expect-error accessToken on session
@@ -290,11 +345,23 @@ export default function StrakvuPage() {
           localStorage.setItem('strakvu_github_token', token);
         } catch {}
       }
-      fetchGitHubActivity(username, token);
-    } else if (!hasInitialFetched.current) {
-      hasInitialFetched.current = true;
-      const storedToken = typeof window !== 'undefined' ? localStorage.getItem('strakvu_github_token') || undefined : undefined;
-      const targetUser = baseProfile.username;
+      if (username) {
+        try {
+          localStorage.setItem('strakvu_github_username', username);
+        } catch {}
+      }
+      fetchGitHubActivity(username, token, true);
+    } else {
+      // sessionStatus is 'unauthenticated' - recover from persistent local storage
+      const storedToken =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('strakvu_github_token') || undefined
+          : undefined;
+      const storedUsername =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('strakvu_github_username') || undefined
+          : undefined;
+      const targetUser = storedUsername || baseProfile.username;
       if (targetUser || storedToken) {
         fetchGitHubActivity(targetUser, storedToken);
       }
@@ -357,6 +424,7 @@ export default function StrakvuPage() {
       setProfileOverride(updatedProfile);
       try {
         localStorage.setItem('strakvu_profile', JSON.stringify(updatedProfile));
+        localStorage.setItem('strakvu_github_username', customUsername);
         if (token) localStorage.setItem('strakvu_github_token', token);
       } catch {}
       fetchGitHubActivity(customUsername, token, true);
@@ -376,7 +444,9 @@ export default function StrakvuPage() {
     setFetchedRepos([]);
     try {
       localStorage.removeItem('strakvu_profile');
+      localStorage.removeItem('strakvu_github_username');
       localStorage.removeItem('strakvu_github_token');
+      localStorage.removeItem('strakvu_cached_events');
       localStorage.removeItem('strakvu_custom_pushes');
       localStorage.removeItem('strakvu_aichats');
       localStorage.removeItem('strakvu_waka_sessions');
@@ -426,11 +496,23 @@ export default function StrakvuPage() {
         if (s.editor) editorsSet.add(s.editor);
       }
 
+      // If live WakaTime summary is available for this day, merge it
+      if (wakaSummary && wakaSummary.date === day.date && wakaSummary.totalSeconds > 0) {
+        if (totalMinutes === 0) {
+          totalMinutes = Math.floor(wakaSummary.totalSeconds / 60);
+        }
+        for (const ed of wakaSummary.editors) {
+          if (ed.name) editorsSet.add(ed.name);
+        }
+      }
+
       let durationText = '';
       if (totalMinutes > 0) {
         const h = Math.floor(totalMinutes / 60);
         const m = totalMinutes % 60;
         durationText = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+      } else if (wakaSummary && wakaSummary.date === day.date && wakaSummary.totalText && wakaSummary.totalText !== '0m') {
+        durationText = wakaSummary.totalText;
       }
 
       const totalActivities = allEvents.length + dayAIChats.length + (totalMinutes > 0 ? 1 : 0);
@@ -585,6 +667,8 @@ export default function StrakvuPage() {
               setSelectedDayDate(newDate);
               loadWakaTime(newDate, wakaKey);
             }}
+            onRefresh={handleRefreshWakaTime}
+            isLoading={isLoadingWakaTime}
           />
         ) : (
           <div className="space-y-6 animate-in fade-in duration-200">
@@ -616,6 +700,17 @@ export default function StrakvuPage() {
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRefreshWakaTime}
+                      disabled={isLoadingWakaTime}
+                      className="h-8 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white hover:border-cyan-500 transition-colors"
+                      title="Refresh WakaTime Activity"
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5 sm:mr-1', isLoadingWakaTime && 'animate-spin text-cyan-400')} />
+                      <span className="hidden sm:inline">{isLoadingWakaTime ? 'Syncing...' : 'Sync'}</span>
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -707,6 +802,8 @@ export default function StrakvuPage() {
                   onClose={() => setSelectedDayDate(null)}
                   onAddAIChat={handleAddAIChat}
                   onAddEditorSession={handleAddEditorSession}
+                  onRefreshWakaTime={handleRefreshWakaTime}
+                  isLoadingWakaTime={isLoadingWakaTime}
                 />
               </div>
             </div>

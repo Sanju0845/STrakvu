@@ -57,6 +57,7 @@ These activities are normally scattered across different browser tabs and tools.
 
 * 📅 **Full Month & Year Calendar View** — Inspect your coding rhythms, commit density, and focus projects across any date.
 * ⚡ **Live GitHub Activity & Commits** — Sync real commit hashes, messages, branches, and diff summaries directly from your repositories.
+* ⏱️ **Waka Studio & IDE Time Tracking** — Interactive 24-hour circular clock dial, hourly timeline swimlanes, and monthly coding grid tracking hours across projects and editors (with automatic Qoder & VS Code mapping).
 * 📖 **Developer Story** — Automatically synthesizes what was built on each date from your day's commit history.
 * 🧠 **AI Prompt & Context Logging** — Capture prompts, snippets, and problem-solving sessions from Claude, ChatGPT, Gemini, or Cursor attached to the specific project and day.
 * 📊 **Rhythm & Velocity Metrics** — Track your daily coding streak, top repositories, and active days.

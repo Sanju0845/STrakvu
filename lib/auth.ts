@@ -10,8 +10,8 @@ if (!process.env.NEXTAUTH_URL || process.env.NEXTAUTH_URL === '') {
   }
 }
 
-// 30 days persistent session duration (in seconds)
-const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60;
+// 90 days persistent session duration (in seconds)
+const NINETY_DAYS_IN_SECONDS = 90 * 24 * 60 * 60;
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -27,11 +27,11 @@ export const authOptions: AuthOptions = {
   ],
   session: {
     strategy: 'jwt',
-    maxAge: THIRTY_DAYS_IN_SECONDS, // 30 days persistent login across browser closes
-    updateAge: 24 * 60 * 60, // 24 hours
+    maxAge: NINETY_DAYS_IN_SECONDS, // 90 days persistent login across browser closes
+    updateAge: 24 * 60 * 60, // Refresh token age every 24 hours
   },
   jwt: {
-    maxAge: THIRTY_DAYS_IN_SECONDS,
+    maxAge: NINETY_DAYS_IN_SECONDS,
   },
   callbacks: {
     async session({ session, token }) {
@@ -54,37 +54,9 @@ export const authOptions: AuthOptions = {
       return token;
     },
   },
-  cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production' ? '__Secure-next-auth.session-token' : 'next-auth.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax', // 'lax' preserves persistent authentication across browser restarts and tab opens
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: THIRTY_DAYS_IN_SECONDS, // Ensures cookie is NOT a temporary session-only cookie
-      },
-    },
-    callbackUrl: {
-      name: process.env.NODE_ENV === 'production' ? '__Secure-next-auth.callback-url' : 'next-auth.callback-url',
-      options: {
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: THIRTY_DAYS_IN_SECONDS,
-      },
-    },
-    csrfToken: {
-      name: process.env.NODE_ENV === 'production' ? '__Host-next-auth.csrf-token' : 'next-auth.csrf-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: THIRTY_DAYS_IN_SECONDS,
-      },
-    },
-  },
-  // Stable secret to avoid session invalidation across Vercel serverless cold starts
-  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || 'strakvu_super_persistent_secret_key_2026',
+  // Permanent stable secret to prevent session invalidation on serverless cold starts or restarts
+  secret:
+    process.env.NEXTAUTH_SECRET ||
+    process.env.AUTH_SECRET ||
+    'strakvu_super_persistent_secret_key_production_stable_2026_xyz',
 };

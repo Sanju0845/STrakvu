@@ -17,6 +17,7 @@ import {
   Activity,
   Cpu,
   Monitor,
+  RefreshCw,
 } from 'lucide-react';
 import { WakaTimeDaySummary } from '../types';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,8 @@ interface WakaTimePanelProps {
   selectedDate: string;
   onOpenConnectModal: () => void;
   isCustomKeySet: boolean;
+  onRefresh?: () => void;
+  isLoading?: boolean;
 }
 
 export function WakaTimePanel({
@@ -35,6 +38,8 @@ export function WakaTimePanel({
   selectedDate,
   onOpenConnectModal,
   isCustomKeySet,
+  onRefresh,
+  isLoading,
 }: WakaTimePanelProps) {
   const [activeTab, setActiveTab] = useState<'editors' | 'languages' | 'heartbeats'>('editors');
 
@@ -43,11 +48,11 @@ export function WakaTimePanel({
 
   const getEditorBadgeColor = (name: string) => {
     const lower = name.toLowerCase();
+    if (lower.includes('qoder')) return 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60';
     if (lower.includes('cursor')) return 'text-cyan-400 bg-cyan-950/40 border-cyan-800/60';
     if (lower.includes('vs code') || lower.includes('code')) return 'text-sky-400 bg-sky-950/40 border-sky-800/60';
     if (lower.includes('antigravity') || lower.includes('web') || lower.includes('studio'))
       return 'text-purple-400 bg-purple-950/40 border-purple-800/60';
-    if (lower.includes('qoder')) return 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60';
     if (lower.includes('jetbrains') || lower.includes('webstorm') || lower.includes('pycharm'))
       return 'text-pink-400 bg-pink-950/40 border-pink-800/60';
     return 'text-amber-400 bg-amber-950/40 border-amber-800/60';
@@ -83,16 +88,32 @@ export function WakaTimePanel({
             </div>
           </div>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onOpenConnectModal}
-            className="h-8 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white hover:border-cyan-500 transition-colors"
-          >
-            <KeyRound className="h-3 w-3 mr-1 text-cyan-400" />
-            <span className="hidden sm:inline">{isCustomKeySet ? 'API Key Configured' : 'Connect Key'}</span>
-            <span className="sm:hidden">Key</span>
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onRefresh && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRefresh}
+                disabled={isLoading}
+                className="h-8 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white hover:border-cyan-500 transition-colors"
+                title="Refresh live WakaTime activity"
+              >
+                <RefreshCw className={cn('h-3 w-3 sm:mr-1', isLoading && 'animate-spin text-cyan-400')} />
+                <span className="hidden sm:inline">{isLoading ? 'Syncing...' : 'Sync'}</span>
+              </Button>
+            )}
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onOpenConnectModal}
+              className="h-8 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white hover:border-cyan-500 transition-colors"
+            >
+              <KeyRound className="h-3 w-3 mr-1 text-cyan-400" />
+              <span className="hidden sm:inline">{isCustomKeySet ? 'API Key Configured' : 'Connect Key'}</span>
+              <span className="sm:hidden">Key</span>
+            </Button>
+          </div>
         </div>
 
         {/* Big Metric Display for Selected Date */}

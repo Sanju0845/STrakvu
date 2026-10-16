@@ -13,7 +13,7 @@ export interface WakaEditor {
   percent: number;
   digital: string;
   text: string;
-  iconType?: 'cursor' | 'vscode' | 'terminal' | 'web' | 'idea' | 'code';
+  iconType?: 'qoder' | 'cursor' | 'vscode' | 'terminal' | 'web' | 'idea' | 'code';
 }
 
 export interface WakaProject {
@@ -40,6 +40,33 @@ export interface WakaHeartbeatSession {
   branch?: string;
 }
 
+export interface HourlyCodingSlot {
+  hour: number; // 0 to 23
+  hourLabel: string; // e.g. "12 AM", "1 PM"
+  totalSeconds: number;
+  minutes: number;
+  percent: number; // 0 - 100% of the hour
+  intensity: 0 | 1 | 2 | 3 | 4;
+  projects: string[];
+  editors: string[];
+  primaryProject?: string;
+  primaryEditor?: string;
+}
+
+export interface WakaTimeMonthDay {
+  date: string; // YYYY-MM-DD
+  dayNumber: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  totalSeconds: number;
+  totalText: string;
+  level: 0 | 1 | 2 | 3 | 4;
+  projects: { name: string; minutes: number }[];
+  topProject?: string;
+  editors: string[];
+  topEditor?: string;
+}
+
 export interface WakaTimeDaySummary {
   date: string; // YYYY-MM-DD
   totalSeconds: number;
@@ -49,6 +76,7 @@ export interface WakaTimeDaySummary {
   languages: WakaLanguage[];
   projects: WakaProject[];
   heartbeats: WakaHeartbeatSession[];
+  hourlySlots?: HourlyCodingSlot[];
   isConnected: boolean;
 }
 

@@ -12,7 +12,9 @@ import {
   Flame,
   Info,
 } from 'lucide-react';
+import { WakaTimeService } from '../wakatime-service';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface WakaTimeConnectModalProps {
   isOpen: boolean;
@@ -28,12 +30,14 @@ export function WakaTimeConnectModal({
   currentKey,
 }: WakaTimeConnectModalProps) {
   const [apiKeyInput, setApiKeyInput] = useState(currentKey || '');
+  const [remapEditor, setRemapEditor] = useState<string>(() => WakaTimeService.getRemapVSCode());
   const [isSaved, setIsSaved] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    WakaTimeService.setRemapVSCode(remapEditor);
     onSaveKey(apiKeyInput.trim());
     setIsSaved(true);
     setTimeout(() => {
@@ -112,6 +116,60 @@ export function WakaTimeConnectModal({
               placeholder="waka_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               className="w-full rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2.5 text-xs font-mono text-white placeholder:text-[#6e7681] focus:outline-none focus:border-cyan-500 transition-colors"
             />
+          </div>
+
+          {/* Primary Editor Selection */}
+          <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-mono text-emerald-400 font-semibold flex items-center gap-1.5">
+                <Laptop className="h-3.5 w-3.5" />
+                <span>Primary Editor Mapping</span>
+              </label>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/60">
+                Remaps VS Code
+              </span>
+            </div>
+            <p className="text-[11px] text-[#8b949e] font-sans leading-relaxed">
+              <strong>Why Qoder shows as VS Code:</strong> Qoder is built on the VS Code engine. When you use the WakaTime extension inside Qoder, WakaTime automatically logs your heartbeats under the label &ldquo;VS Code&rdquo;. Strakvu remaps them so your profile accurately shows Qoder!
+            </p>
+            <div className="grid grid-cols-3 gap-2 pt-0.5 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setRemapEditor('Qoder')}
+                className={cn(
+                  'px-2.5 py-2 rounded-lg border text-center transition-all',
+                  remapEditor === 'Qoder'
+                    ? 'bg-emerald-600 text-white border-emerald-400 font-semibold shadow-sm shadow-emerald-950/60'
+                    : 'bg-[#161b22] border-[#30363d] text-[#8b949e] hover:text-white hover:border-[#484f58]'
+                )}
+              >
+                Qoder AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setRemapEditor('Cursor')}
+                className={cn(
+                  'px-2.5 py-2 rounded-lg border text-center transition-all',
+                  remapEditor === 'Cursor'
+                    ? 'bg-cyan-600 text-white border-cyan-400 font-semibold shadow-sm shadow-cyan-950/60'
+                    : 'bg-[#161b22] border-[#30363d] text-[#8b949e] hover:text-white hover:border-[#484f58]'
+                )}
+              >
+                Cursor AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setRemapEditor('VS Code')}
+                className={cn(
+                  'px-2.5 py-2 rounded-lg border text-center transition-all',
+                  remapEditor === 'VS Code'
+                    ? 'bg-sky-600 text-white border-sky-400 font-semibold shadow-sm shadow-sky-950/60'
+                    : 'bg-[#161b22] border-[#30363d] text-[#8b949e] hover:text-white hover:border-[#484f58]'
+                )}
+              >
+                VS Code
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-2">
