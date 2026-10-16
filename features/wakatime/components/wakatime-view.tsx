@@ -132,19 +132,6 @@ export function WakaTimeView({
   const loadMonthData = useCallback(async (year: number, month: number) => {
     setIsLoadingMonth(true);
     try {
-      // Check cache first for 0ms load
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem(`strakvu_waka_month_${year}_${month}`);
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached);
-            if (parsed?.days) {
-              setMonthDaysMap(parsed.days);
-            }
-          } catch {}
-        }
-      }
-
       const res = await WakaTimeService.fetchMonthData(year, month);
       if (res?.days) {
         setMonthDaysMap((prev) => ({
@@ -158,18 +145,29 @@ export function WakaTimeView({
   }, []);
 
   useEffect(() => {
-    loadMonthData(gridDate.getFullYear(), gridDate.getMonth());
-  }, [gridDate, loadMonthData]);
+    let isMounted = true;
+    const fetchAsync = async () => {
+      const y = gridDate.getFullYear();
+      const m = gridDate.getMonth();
+      const res = await WakaTimeService.fetchMonthData(y, m);
+      if (isMounted && res?.days) {
+        setMonthDaysMap((prev) => ({ ...prev, ...res.days }));
+      }
+    };
+    fetchAsync();
+    return () => {
+      isMounted = false;
+    };
+  }, [gridDate]);
 
-  // Keep monthDaysMap updated when active summary changes
-  useEffect(() => {
-    if (summary && summary.date) {
-      setMonthDaysMap((prev) => ({
-        ...prev,
-        [summary.date]: summary,
-      }));
-    }
-  }, [summary]);
+  // Merge live summary into month map via useMemo without triggering cascading renders
+  const displayDaysMap = useMemo(() => {
+    if (!summary || !summary.date) return monthDaysMap;
+    return {
+      ...monthDaysMap,
+      [summary.date]: summary,
+    };
+  }, [monthDaysMap, summary]);
 
   const handlePrevMonth = () => {
     setGridDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -330,23 +328,199 @@ export function WakaTimeView({
         </div>
       </div>
 
-      {/* SECTION 1: Monthly WakaTime Activity Grid */}
-      {(activeTab === 'all' || activeTab === 'grid') && (
-        <WakaTimeMonthGrid
-          currentDate={gridDate}
-          onPrevMonth={handlePrevMonth}
-          onNextMonth={handleNextMonth}
-          onJumpToday={handleJumpToday}
-          monthDaysMap={monthDaysMap}
-          selectedDate={selectedDate}
-          onSelectDate={handleSelectDay}
-        />
+      {/* Flagship PC View: Calendar on Left (60%), Circular Dial on Right (40%) */}
+      {activeTab === 'all' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column (60% on PC view): Monthly Calendar Grid + Hourly Swimlane Timeline */}
+          <div className="lg:col-span-7 xl:col-span-7 space-y-6">
+            <WakaTimeMonthGrid
+              currentDate={gridDate}
+              onPrevMonth={handlePrevMonth}
+              onNextMonth={handleNextMonth}
+              onJumpToday={handleJumpToday}
+              onSelectMonthYear={(y, m) => {
+                setGridDate(new Date(y, m, 1));
+                loadMonthData(y, m);
+              }}
+              monthDaysMap={displayDaysMap}
+              selectedDate={selectedDate}
+              onSelectDate={handleSelectDay}
+            />
+
+            <WakaTimeHourlyTimeline
+              hourlySlots={validHourlySlots}
+              selectedDate={selectedDate}
+            />
+          </div>
+
+          {/* Right Column (40% on PC view): Circular Dial Clock + Selected Day Inspection */}
+          <div className="lg:col-span-5 xl:col-span-5 space-y-6">
+            {/* 24-Hour Circular Dial */}
+            <WakaTimeClockDial
+              hourlySlots={validHourlySlots}
+              totalDayText={totalTime}
+              selectedDate={selectedDate}
+              topEditor={primaryEditorName}
+            />
+
+            {/* Selected Day Deep Dive: Projects, IDE Sessions & Languages */}
+            <div className="rounded-2xl border border-[#30363d] bg-[#0d1117] p-5 shadow-2xl space-y-5">
+              {/* Day Header */}
+              <div className="flex items-center justify-between border-b border-[#21262d] pb-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-[#8b949e] tracking-wider block">
+                    Day Overview ({selectedDate})
+                  </span>
+                  <h4 className="text-sm sm:text-base font-bold font-mono text-white flex items-center gap-2 mt-0.5">
+                    <span>{formattedDateTitle}</span>
+                    <span className="text-xs text-cyan-300 font-extrabold bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                      {totalTime}
+                    </span>
+                  </h4>
+                </div>
+
+                {onRefresh && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onRefresh();
+                      loadMonthData(gridDate.getFullYear(), gridDate.getMonth());
+                    }}
+                    disabled={isLoading || isLoadingMonth}
+                    className="h-8 text-xs font-mono border-[#30363d] text-cyan-300 hover:text-white"
+                    title="Refresh day's WakaTime pulses"
+                  >
+                    <RefreshCw className={cn('h-3.5 w-3.5 mr-1', (isLoading || isLoadingMonth) && 'animate-spin text-cyan-400')} />
+                    <span>Sync</span>
+                  </Button>
+                )}
+              </div>
+
+              {/* Projects List */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-mono mb-2.5">
+                  <span className="text-white font-bold flex items-center gap-1.5">
+                    <FolderGit2 className="h-3.5 w-3.5 text-purple-400" />
+                    <span>Projects ({projects.length})</span>
+                  </span>
+                </div>
+
+                {projects.length === 0 ? (
+                  <div className="py-4 text-center text-xs font-mono text-[#8b949e] bg-[#161b22]/40 rounded-xl border border-[#21262d]">
+                    No active project intervals recorded for this day.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {projects.map((proj) => (
+                      <div key={proj.name} className="rounded-xl border border-[#21262d] bg-[#161b22]/60 p-2.5 text-xs font-mono">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-white truncate max-w-[170px]">{proj.name}</span>
+                          <span className="text-cyan-300 font-bold">{proj.text} ({proj.percent}%)</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-[#21262d] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-purple-500 to-cyan-400 rounded-full"
+                            style={{ width: `${proj.percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* IDE & Editor Sessions */}
+              <div className="border-t border-[#21262d] pt-3">
+                <div className="flex items-center justify-between text-xs font-mono mb-2.5">
+                  <span className="text-white font-bold flex items-center gap-1.5">
+                    <Laptop className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>IDE Sessions</span>
+                  </span>
+                  <span className="text-[11px] text-emerald-400 font-semibold">{primaryEditorName} Active</span>
+                </div>
+
+                {editors.length === 0 ? (
+                  <div className="py-4 text-center text-xs font-mono text-[#8b949e] bg-[#161b22]/40 rounded-xl border border-[#21262d]">
+                    No active editor heartbeats for this date.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {editors.map((ed) => {
+                      const meta = getEditorBadge(ed.name);
+                      return (
+                        <div key={ed.name} className="rounded-xl border border-[#21262d] bg-[#161b22]/60 p-2.5 text-xs font-mono">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={cn('px-2 py-0.5 rounded border font-semibold text-[11px]', meta.color)}>
+                              {meta.badge}
+                            </span>
+                            <span className="text-white font-bold">{ed.text} ({ed.percent}%)</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-[#21262d] rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full"
+                              style={{ width: `${ed.percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Languages Used */}
+              {languages.length > 0 && (
+                <div className="border-t border-[#21262d] pt-3">
+                  <span className="text-white font-bold text-xs font-mono flex items-center gap-1.5 mb-2">
+                    <Code2 className="h-3.5 w-3.5 text-cyan-400" />
+                    <span>Languages ({languages.length})</span>
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {languages.map((l) => (
+                      <span
+                        key={l.name}
+                        className="px-2 py-1 rounded-md border border-[#21262d] bg-[#161b22]/80 text-[11px] font-mono text-[#c9d1d9] flex items-center gap-1"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                        <span>{l.name}</span>
+                        <span className="text-[#8b949e]">({l.text})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* SECTION 2: 24-Hour Circular Dial + Per-Hour Timeline Bar */}
-      {(activeTab === 'all' || activeTab === 'dial') && (
+      {/* Grid Only Focus View */}
+      {activeTab === 'grid' && (
+        <div className="space-y-6">
+          <WakaTimeMonthGrid
+            currentDate={gridDate}
+            onPrevMonth={handlePrevMonth}
+            onNextMonth={handleNextMonth}
+            onJumpToday={handleJumpToday}
+            onSelectMonthYear={(y, m) => {
+              setGridDate(new Date(y, m, 1));
+              loadMonthData(y, m);
+            }}
+            monthDaysMap={displayDaysMap}
+            selectedDate={selectedDate}
+            onSelectDate={handleSelectDay}
+          />
+          <WakaTimeHourlyTimeline
+            hourlySlots={validHourlySlots}
+            selectedDate={selectedDate}
+          />
+        </div>
+      )}
+
+      {/* Dial Only Focus View */}
+      {activeTab === 'dial' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          {/* Left: 24-Hour Circular Clock Dial */}
           <div className="lg:col-span-5 xl:col-span-5">
             <WakaTimeClockDial
               hourlySlots={validHourlySlots}
@@ -355,8 +529,6 @@ export function WakaTimeView({
               topEditor={primaryEditorName}
             />
           </div>
-
-          {/* Right: 24-Hour Hourly Swimlane Timeline */}
           <div className="lg:col-span-7 xl:col-span-7">
             <WakaTimeHourlyTimeline
               hourlySlots={validHourlySlots}
@@ -365,119 +537,6 @@ export function WakaTimeView({
           </div>
         </div>
       )}
-
-      {/* SECTION 3: Projects & Editors Deep Dive for Selected Day */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left: Projects Worked On */}
-        <div className="lg:col-span-6 rounded-2xl border border-[#30363d] bg-[#0d1117] p-5 sm:p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-4 border-b border-[#21262d] pb-3">
-            <div className="flex items-center gap-2 font-mono text-sm font-bold text-white">
-              <FolderGit2 className="h-4 w-4 text-purple-400" />
-              <span>Projects Worked On ({selectedDate})</span>
-            </div>
-            <span className="text-xs font-mono text-[#8b949e]">
-              {projects.length} project{projects.length === 1 ? '' : 's'}
-            </span>
-          </div>
-
-          {projects.length === 0 ? (
-            <div className="py-8 text-center text-xs font-mono text-[#8b949e]">
-              No active project intervals recorded on {selectedDate}.
-            </div>
-          ) : (
-            <div className="space-y-3.5">
-              {projects.map((proj) => (
-                <div key={proj.name} className="rounded-xl border border-[#30363d] bg-[#161b22]/70 p-3.5">
-                  <div className="flex items-center justify-between text-xs font-mono mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-sm">{proj.name}</span>
-                      <span className="text-[#8b949e] text-[11px]">{proj.percent}% of day</span>
-                    </div>
-                    <span className="font-extrabold text-cyan-300 font-mono">{proj.text}</span>
-                  </div>
-                  <div className="h-2 w-full bg-[#21262d] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-purple-500 to-cyan-400 rounded-full"
-                      style={{ width: `${proj.percent}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Editors & Languages */}
-        <div className="lg:col-span-6 space-y-6">
-          {/* Editor Breakdown */}
-          <div className="rounded-2xl border border-[#30363d] bg-[#0d1117] p-5 sm:p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-4 border-b border-[#21262d] pb-3">
-              <div className="flex items-center gap-2 font-mono text-sm font-bold text-white">
-                <Laptop className="h-4 w-4 text-emerald-400" />
-                <span>IDE & Editor Sessions</span>
-              </div>
-              <span className="text-xs font-mono text-emerald-400 font-semibold">{primaryEditorName} Active</span>
-            </div>
-
-            {editors.length === 0 ? (
-              <div className="py-6 text-center text-xs font-mono text-[#8b949e]">
-                No active editor logs for this date.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {editors.map((ed) => {
-                  const meta = getEditorBadge(ed.name);
-                  return (
-                    <div key={ed.name} className="rounded-xl border border-[#30363d] bg-[#161b22]/70 p-3.5">
-                      <div className="flex items-center justify-between text-xs font-mono mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className={cn('px-2.5 py-0.5 rounded border font-semibold text-xs', meta.color)}>
-                            {meta.badge}
-                          </span>
-                          <span className="text-[#8b949e]">{ed.percent}%</span>
-                        </div>
-                        <span className="font-bold text-white text-sm">{ed.text}</span>
-                      </div>
-                      <div className="h-2 w-full bg-[#21262d] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full"
-                          style={{ width: `${ed.percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Languages Breakdown */}
-          {languages.length > 0 && (
-            <div className="rounded-2xl border border-[#30363d] bg-[#0d1117] p-5 sm:p-6 shadow-xl">
-              <div className="flex items-center justify-between mb-4 border-b border-[#21262d] pb-3">
-                <div className="flex items-center gap-2 font-mono text-sm font-bold text-white">
-                  <Code2 className="h-4 w-4 text-cyan-400" />
-                  <span>Languages Used</span>
-                </div>
-                <span className="text-xs font-mono text-[#8b949e]">{languages.length} languages</span>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {languages.map((l) => (
-                  <div
-                    key={l.name}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#30363d] bg-[#161b22]/70 text-xs font-mono"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-cyan-400" />
-                    <span className="text-white font-medium">{l.name}</span>
-                    <span className="text-[#8b949e]">({l.text})</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

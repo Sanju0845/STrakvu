@@ -59,7 +59,7 @@ export function WakaTimeClockDial({
       </div>
 
       {/* SVG 24-Hour Clock Dial */}
-      <div className="relative my-2 select-none">
+      <div className="relative my-2 select-none flex items-center justify-center w-[320px] h-[320px] shrink-0">
         <svg
           width={size}
           height={size}
